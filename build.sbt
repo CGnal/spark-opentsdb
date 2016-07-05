@@ -160,7 +160,6 @@ lazy val root = (project in file(".")).
     libraryDependencies ++= Seq(
       hadoopHBaseExcludes("org.scalatest" % "scalatest_2.10" % scalaTestVersion % "it,test"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "it,test" classifier "tests"),
-      //hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "it,test" extra "type" -> "test-jar"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "it,test" classifier "tests"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "it,test" classifier "tests"
         exclude("org.apache.hadoop<", "hadoop-hdfs")
@@ -176,7 +175,8 @@ lazy val root = (project in file(".")).
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "it,test"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests")
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests"),
+      "net.opentsdb" % "opentsdb" % openTSDBVersion % "it,test" exclude("net.opentsdb", "opentsdb_gwt_theme") exclude("com.google.guava", "guava") exclude("ch.qos.logback","*")
     ),
     headers := Map(
       "sbt" -> Apache2_0("2016", "CGnal S.p.A."),

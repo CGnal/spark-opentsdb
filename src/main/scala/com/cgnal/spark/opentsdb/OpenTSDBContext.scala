@@ -18,6 +18,7 @@ package com.cgnal.spark.opentsdb
 
 import java.nio.ByteBuffer
 import java.util
+import java.util.Calendar
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
 import org.apache.hadoop.hbase.TableName
@@ -30,9 +31,9 @@ import org.apache.spark.rdd.RDD
 
 import scala.collection.mutable.ArrayBuffer
 
-class OpenTSDBContext(hbaseContext: HBaseContext) {
+class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") {
 
-  def generateRDD(metricName: String, tagKeyValueMap: String, startdate: String, enddate: String): RDD[(Long, Double)] = {
+  def generateRDD(metricName: String, tagKeyValueMap: String, startdate: String, enddate: String, dateFormat: String = "ddMMyyyyHH:mm"): RDD[(Long, Double)] = {
 
     val tags: Map[String, String] = if (tagKeyValueMap.trim != "*")
       tagKeyValueMap.split(",").map(_.split("->")).map(l => (l(0).trim, l(1).trim)).toMap
@@ -49,9 +50,11 @@ class OpenTSDBContext(hbaseContext: HBaseContext) {
 
     val tagVUIDs = tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
 
-    if (metricsUID.length == 0) {
-      println("Not Found: " + (if (metricsUID.length == 0) "Metric:" + metricName))
-    }
+    if (metricsUID.length == 0)
+      throw new Exception(s"Metric not found: $metricName")
+
+    if(!(tagKUIDs.size == tags.size && tagVUIDs.size == tags.size))
+      throw new Exception("Some of the tags are not found")
 
     val metricScan = getMetricScan(
       tags,
@@ -132,12 +135,16 @@ class OpenTSDBContext(hbaseContext: HBaseContext) {
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
     scan.setFilter(rowFilter)
 
-    val format_data = new java.text.SimpleDateFormat("ddMMyyyyHH:mm")
+    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
+
+    val minDate = new Calendar.Builder().setDate(1970, 0, 1).setTimeOfDay(1, 0, 0).build().getTime
+    val maxDate = new Calendar.Builder().setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
+
     val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((format_data.parse(if (startdate.isDefined) startdate.get else "0101197001:00").getTime / 1000).toInt)
+    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.get else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
 
     val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((format_data.parse(if (enddate.isDefined) enddate.get else "3112209923:59").getTime / 1000).toInt)
+    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
 
     scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
     scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
