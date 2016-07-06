@@ -16,15 +16,15 @@
 
 package com.cgnal.spark.opentsdb
 
-import java.util.{Calendar, Date}
+import java.util.{ Calendar, Date }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
+import org.apache.spark.{ SparkConf, SparkContext }
 import org.hbase.async.HBaseClient
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
+import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 
 import scala.collection.JavaConversions._
 

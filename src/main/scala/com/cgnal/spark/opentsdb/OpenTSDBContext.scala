@@ -53,7 +53,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     if (metricsUID.length == 0)
       throw new Exception(s"Metric not found: $metricName")
 
-    if(!(tagKUIDs.size == tags.size && tagVUIDs.size == tags.size))
+    if (!(tagKUIDs.size == tags.size && tagVUIDs.size == tags.size))
       throw new Exception("Some of the tags are not found")
 
     val metricScan = getMetricScan(

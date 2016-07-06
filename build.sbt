@@ -57,6 +57,8 @@ val scalaTestVersion = "2.2.6"
 
 val openTSDBVersion = "2.2.0"
 
+val sparkTSVersion = "0.3.0"
+
 resolvers ++= Seq(
   "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/",
   "apache snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
@@ -105,6 +107,7 @@ val hbaseExcludes =
 val assemblyDependencies = (scope: String) => Seq(
   sparkExcludes("org.apache.spark" %% "spark-streaming-kafka" % sparkVersion % scope),
   sparkExcludes("org.apache.hbase" % "hbase-spark" % hbaseVersion % scope),
+  sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % scope),
   hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % scope),
   hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % scope),
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % scope),
