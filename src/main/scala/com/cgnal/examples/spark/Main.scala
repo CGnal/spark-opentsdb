@@ -72,7 +72,7 @@ object Main extends App {
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
   val openTSDBContext = new OpenTSDBContext(hbaseContext)
 
-  val ts = openTSDBContext.generateRDD("open", "symbol->AAPL", "*", "*")
+  val ts = openTSDBContext.load("open", Map("symbol" -> "AAPL"))
 
   val result = ts.collect()
 

@@ -21,6 +21,8 @@ import java.util
 import java.util.Calendar
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
+import net.opentsdb.core.TSDB
+import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
@@ -28,59 +30,57 @@ import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
+import org.hbase.async.HBaseClient
 
 import scala.collection.mutable.ArrayBuffer
 
-class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") {
+class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
-  def generateRDD(metricName: String, tagKeyValueMap: String, startdate: String, enddate: String, dateFormat: String = "ddMMyyyyHH:mm"): RDD[(Long, Double)] = {
-
-    val tags: Map[String, String] = if (tagKeyValueMap.trim != "*")
-      tagKeyValueMap.split(",").map(_.split("->")).map(l => (l(0).trim, l(1).trim)).toMap
-    else
-      Map("dummyKey" -> "dummyValue")
+  def load(
+    metricName: String,
+    tags: Map[String, String] = Map.empty[String, String],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None,
+    dateFormat: String = "ddMMyyyyHH:mm"
+  ): RDD[(Long, Float)] = {
 
     val uidScan = getUIDScan(metricName, tags)
 
-    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf("tsdb-uid"), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
     val metricsUID = tsdbUID.map(l => l._2.getValue("id".getBytes(), "metrics".getBytes())).filter(_ != null).collect
 
-    val tagKUIDs = tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagk".getBytes()))).filter(_._2 != null).collect.toMap
-
-    val tagVUIDs = tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
+    val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
+      (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
+    else {
+      (
+        tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagk".getBytes()))).filter(_._2 != null).collect.toMap,
+        tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
+      )
+    }
 
     if (metricsUID.length == 0)
       throw new Exception(s"Metric not found: $metricName")
-
-    if (!(tagKUIDs.size == tags.size && tagVUIDs.size == tags.size))
-      throw new Exception("Some of the tags are not found")
 
     val metricScan = getMetricScan(
       tags,
       metricsUID,
       tagKUIDs,
       tagVUIDs,
-      if (startdate.trim == "*")
-        None
-      else
-        Option(startdate),
-      if (enddate.trim == "*")
-        None
-      else
-        Option(enddate)
+      startdate,
+      enddate
     )
 
-    val tsdb = hbaseContext.hbaseRDD(TableName.valueOf("tsdb"), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    val ts: RDD[(Long, Double)] = tsdb.
+    val ts: RDD[(Long, Float)] = tsdb.
       map(kv => (
         util.Arrays.copyOfRange(kv._1.copyBytes(), 3, 7),
         kv._2.getFamilyMap("t".getBytes())
       )).
       map({
         kv =>
-          val row = new ArrayBuffer[(Long, Double)]
+          val row = new ArrayBuffer[(Long, Float)]
           val basetime: Long = ByteBuffer.wrap(kv._1).getInt.toLong
           val iterator = kv._2.entrySet().iterator()
           var ctr = 0
@@ -99,6 +99,24 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
           row
       }).flatMap(_.map(kv => (kv._1, kv._2)))
     ts
+  }
+
+  def write(timeseries: RDD[(String, Long, Float, Map[String, String])]): Unit = {
+    val hbaseConfig = this.hbaseContext.config
+    val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
+    val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
+    timeseries.foreachPartition(it => {
+      val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
+      val config = new Config(false)
+      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
+      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+      config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      val tsdb = new TSDB(hbaseAsyncClient, config)
+      import collection.JavaConversions._
+      it.foreach(record => {
+        tsdb.addPoint(record._1, record._2, record._3, record._4)
+      })
+    })
   }
 
   private def getUIDScan(metricName: String, tags: Map[String, String]) = {
@@ -154,6 +172,11 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 }
 
 object OpenTSDBContext {
+
+  var tsdbTable = "tsdb"
+
+  var tsdbUidTable = "tsdb-uid"
+
   //TODO: changes operations on binary strings to bits
   private def processQuantifier(quantifier: Array[Byte]): Array[(Int, Boolean, Int)] = {
     //converting Byte Arrays to a Array of binary string
@@ -190,11 +213,11 @@ object OpenTSDBContext {
   }
 
   //TODO: changes operations on binary strings to bits
-  private def processValues(quantifier: Array[(Int, Boolean, Int)], values: Array[Byte]): Array[Double] = {
+  private def processValues(quantifier: Array[(Int, Boolean, Int)], values: Array[Byte]): Array[Float] = {
     //converting Byte Arrays to a Array of binary string
     val v = values.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) }).mkString
 
-    val out = new ArrayBuffer[Double]
+    val out = new ArrayBuffer[Float]
     var i = 0
     var j = 0
     while (j < quantifier.length) {
@@ -215,11 +238,11 @@ object OpenTSDBContext {
             m.asDigit / math.pow(2.toDouble, i.toDouble)
           }
         }).sum
-        sign * math.pow(2.toDouble, exp.toDouble) * significand
+        (sign * math.pow(2.toDouble, exp.toDouble) * significand).toFloat
       } else {
-        val o = Integer.parseInt(_value, 2).toDouble
+        val o = Integer.parseInt(_value, 2).toFloat
         //#hotfix: signed interger ov value -1 is represented as 11111111, which gets converted to 255
-        if (o == 255.0) -1.toDouble else o
+        if (o == 255.0) -1.toFloat else o
       }
 
       i += valueSize

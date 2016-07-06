@@ -16,12 +16,16 @@
 
 package com.cgnal.spark.opentsdb
 
+import java.sql.Timestamp
+import java.time.{ ZoneId, ZonedDateTime }
 import java.util.{ Calendar, Date }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.{ SparkConf, SparkContext }
 import org.hbase.async.HBaseClient
 import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
@@ -38,6 +42,8 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   var openTSDBContext: OpenTSDBContext = _
 
+  var sqlContext: SQLContext = _
+
   var tsdb: TSDB = _
 
   override def beforeAll(): Unit = {
@@ -48,6 +54,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     sparkContext = new SparkContext(conf)
     hbaseContext = new HBaseContext(sparkContext, hbaseUtil.getConfiguration)
     openTSDBContext = new OpenTSDBContext(hbaseContext)
+    sqlContext = new SQLContext(sparkContext)
     hbaseUtil.createTable(TableName.valueOf("tsdb-uid"), Array("id", "name"))
     hbaseUtil.createTable(TableName.valueOf("tsdb"), Array("t"))
     hbaseUtil.createTable(TableName.valueOf("tsdb-tree"), Array("t"))
@@ -78,7 +85,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       // Default Date Format: dd/MM/yyyy HH:mm
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-        val ts = openTSDBContext.generateRDD("mymetric", "key1->value1, key2->value2", "05/07/2016 10:00", "05/07/2016 20:00")
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
         val result = ts.collect()
 
@@ -90,7 +97,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-        val ts = openTSDBContext.generateRDD("mymetric", "key1->value1", "05/07/2016 10:00", "06/07/2016 20:00")
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1"), Some("05/07/2016 10:00"), Some("06/07/2016 20:00"))
 
         val result = ts.collect()
 
@@ -102,7 +109,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-        val ts = openTSDBContext.generateRDD("mymetric", "key1->value1, key3 -> value3", "05/07/2016 10:00", "06/07/2016 20:00")
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key3" -> "value3"), Some("05/07/2016 10:00"), Some("06/07/2016 20:00"))
 
         val result = ts.collect()
 
@@ -114,7 +121,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-        val ts = openTSDBContext.generateRDD("mymetric", "key1->value1, key2 -> value2", "05/07/2016 10:00", "06/07/2016 20:00")
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("06/07/2016 20:00"))
 
         val result = ts.collect()
 
@@ -122,7 +129,69 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.foreach(p => println((simpleDateFormat.format(new Date(p._1 * 1000)), p._2)))
       }
+      println("------------")
 
+      {
+        val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+        val ts = openTSDBContext.load("mymetric")
+
+        val result = ts.collect()
+
+        result.length must be(20)
+
+        result.foreach(p => println((simpleDateFormat.format(new Date(p._1 * 1000)), p._2)))
+      }
+
+    }
+  }
+
+  "Spark" must {
+    "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
+
+      /**
+       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
+       * ticker data.
+       */
+      def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
+        val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
+          val tokens = line.split('\t')
+          val dt = ZonedDateTime.of(tokens(0).toInt, tokens(1).toInt, tokens(2).toInt, 0, 0, 0, 0,
+            ZoneId.systemDefault())
+          val symbol = tokens(3)
+          val price = tokens(5).toFloat
+          Row(Timestamp.from(dt.toInstant), symbol, price)
+        }
+        val fields = Seq(
+          StructField("timestamp", TimestampType, true),
+          StructField("symbol", StringType, true),
+          StructField("price", FloatType, true)
+        )
+        val schema = StructType(fields)
+        sqlContext.createDataFrame(rowRdd, schema)
+      }
+
+      val tickerObs = loadObservations(sqlContext, "data/ticker.tsv")
+
+      //"timestamp", "symbol", "price"
+      //(String, Date, Float, Map[String, String])
+      val timeseries = tickerObs.map(row => ("ticker", row.getAs[Timestamp]("timestamp").getTime / 1000, row.getAs[Float]("price"), Map("symbol" -> row.getAs[String]("symbol"))))
+
+      openTSDBContext.write(timeseries)
+
+      tickerObs.registerTempTable("tickerObs")
+
+      val ts1 = sqlContext.sql("select * from tickerObs where symbol = 'CSCO' sort by(timestamp)").collect()
+
+      val ts2 = openTSDBContext.load(metricName = "ticker", tags = Map("symbol" -> "CSCO")).collect()
+
+      ts1.foreach(println(_))
+
+      println("---------")
+
+      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+      ts2.foreach(p => println((simpleDateFormat.format(new Date(p._1 * 1000)), p._2)))
+
+      ts1.length must be(ts2.length)
     }
   }
 
