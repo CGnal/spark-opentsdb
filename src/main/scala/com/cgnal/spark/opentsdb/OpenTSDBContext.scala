@@ -18,15 +18,15 @@ package com.cgnal.spark.opentsdb
 
 import java.nio.ByteBuffer
 import java.util
-import java.util.Calendar
+import java.util.{Calendar, TimeZone}
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{ Result, Scan }
+import org.apache.hadoop.hbase.client.{Result, Scan}
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
@@ -37,12 +37,12 @@ import scala.collection.mutable.ArrayBuffer
 class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
   def load(
-    metricName: String,
-    tags: Map[String, String] = Map.empty[String, String],
-    startdate: Option[String] = None,
-    enddate: Option[String] = None,
-    dateFormat: String = "ddMMyyyyHH:mm"
-  ): RDD[(Long, Float)] = {
+            metricName: String,
+            tags: Map[String, String] = Map.empty[String, String],
+            startdate: Option[String] = None,
+            enddate: Option[String] = None,
+            dateFormat: String = "ddMMyyyyHH:mm"
+          ): RDD[(Long, Float)] = {
 
     val uidScan = getUIDScan(metricName, tags)
 
@@ -56,7 +56,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       (
         tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagk".getBytes()))).filter(_._2 != null).collect.toMap,
         tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
-      )
+        )
     }
 
     if (metricsUID.length == 0)
@@ -129,13 +129,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
   }
 
   private def getMetricScan(
-    tags: Map[String, String],
-    metricsUID: Array[Array[Byte]],
-    tagKUIDs: Map[String, Array[Byte]],
-    tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String] = None,
-    enddate: Option[String] = None
-  ) = {
+                             tags: Map[String, String],
+                             metricsUID: Array[Array[Byte]],
+                             tagKUIDs: Map[String, Array[Byte]],
+                             tagVUIDs: Map[String, Array[Byte]],
+                             startdate: Option[String] = None,
+                             enddate: Option[String] = None
+                           ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
@@ -154,9 +154,10 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     scan.setFilter(rowFilter)
 
     val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
+    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
-    val minDate = new Calendar.Builder().setDate(1970, 0, 1).setTimeOfDay(1, 0, 0).build().getTime
-    val maxDate = new Calendar.Builder().setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
+    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(1, 0, 0).build().getTime
+    val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
 
     val stDateBuffer = ByteBuffer.allocate(4)
     stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.get else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
@@ -178,24 +179,24 @@ object OpenTSDBContext {
   var tsdbUidTable = "tsdb-uid"
 
   //TODO: changes operations on binary strings to bits
-  private def processQuantifier(quantifier: Array[Byte]): Array[(Int, Boolean, Int)] = {
+  private def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
     //converting Byte Arrays to a Array of binary string
     val q = quantifier.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) })
     var i = 0
-    val out = new ArrayBuffer[(Int, Boolean, Int)]
+    val out = new ArrayBuffer[(Long, Boolean, Int)]
     while (i != q.length) {
-      var value = -1
+      var value: Long = -1
       var isInteger = true
       var valueLength = -1
       var isQuantifierSizeTypeSmall = true
       //If the 1st 4 bytes are in format "1111", the size of the column quantifier is 4 bytes. Else 2 bytes
-      if (q(i).substring(0, 3).compareTo("1111") == 0) {
+      if (q(i).startsWith("1111")) {
         isQuantifierSizeTypeSmall = false
       }
 
       if (isQuantifierSizeTypeSmall) {
         val v = q(i) + q(i + 1).substring(0, 4) //The 1st 12 bits represent the delta
-        value = Integer.parseInt(v, 2) //convert the delta to Int (seconds)
+        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (seconds)
         isInteger = q(i + 1).substring(4, 5) == "0" //The 13th bit represent the format of the value for the delta. 0=Integer, 1=Float
         valueLength = Integer.parseInt(q(i + 1).substring(5, 8), 2) //The last 3 bits represents the length of the value
         i = i + 2
@@ -213,7 +214,7 @@ object OpenTSDBContext {
   }
 
   //TODO: changes operations on binary strings to bits
-  private def processValues(quantifier: Array[(Int, Boolean, Int)], values: Array[Byte]): Array[Float] = {
+  private def processValues(quantifier: Array[(Long, Boolean, Int)], values: Array[Byte]): Array[Float] = {
     //converting Byte Arrays to a Array of binary string
     val v = values.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) }).mkString
 
