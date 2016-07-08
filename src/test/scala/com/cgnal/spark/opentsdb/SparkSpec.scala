@@ -72,19 +72,18 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   "Spark" must {
     "load a timeseries from OpenTSDB correctly" in {
 
-      for (i <- 0 until 1) {
+      for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
-        println(s"INPUT EPOCH $epoch")
         tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2"))
       }
-    /*
+
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-06T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
         tsdb.addPoint("mymetric", epoch, (i + 100).toLong, Map("key1" -> "value1", "key3" -> "value3"))
       }
-      */
+
       // Default Date Format: dd/MM/yyyy HH:mm
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
@@ -99,7 +98,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
         //result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
       }
       println("------------")
-      /*
+
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
         val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1"), Some("05/07/2016 10:00"), Some("06/07/2016 20:00"))
@@ -145,7 +144,20 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
         result.length must be(20)
 
         result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
-      } */
+      }
+    }
+  }
+
+  "Spark" must {
+    "load a timeseries with milliseconds granularity correctly" in {
+      for (i <- 0 until 10)
+        tsdb.addPoint("mymetric", i.toLong, i.toLong, Map("key1" -> "value1", "key2" -> "value2"))
+
+      val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), None, None)
+
+      val result = ts.collect()
+
+      result must be((0 until 10).map(i => (i.toLong, i.toFloat)))
     }
   }
 
@@ -166,9 +178,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
           Row(Timestamp.from(dt.toInstant), symbol, price)
         }
         val fields = Seq(
-          StructField("timestamp", TimestampType, true),
-          StructField("symbol", StringType, true),
-          StructField("price", FloatType, true)
+          StructField("timestamp", TimestampType, nullable = true),
+          StructField("symbol", StringType, nullable = true),
+          StructField("price", FloatType, nullable = true)
         )
         val schema = StructType(fields)
         sqlContext.createDataFrame(rowRdd, schema)

@@ -73,32 +73,33 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
     val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    val ts: RDD[(Long, Float)] = tsdb.
+    val ts0: RDD[(Array[Byte], util.NavigableMap[Array[Byte], Array[Byte]])] = tsdb.
       map(kv => (
         util.Arrays.copyOfRange(kv._1.copyBytes(), 3, 7),
         kv._2.getFamilyMap("t".getBytes())
-      )).
-      map({
-        kv =>
-          val row = new ArrayBuffer[(Long, Float)]
-          val basetime: Long = ByteBuffer.wrap(kv._1).getInt.toLong
-          val iterator = kv._2.entrySet().iterator()
-          var ctr = 0
-          while (iterator.hasNext) {
-            ctr += 1
-            val next = iterator.next()
-            val a = next.getKey
-            val b = next.getValue
-            val _delta = processQuantifier(a)
-            val delta = _delta.map(_._1)
-            val value = processValues(_delta, b)
+        ))
 
-            for (i <- delta.indices)
-              row += ((basetime + delta(i), value(i)))
-          }
-          row
-      }).flatMap(_.map(kv => (kv._1, kv._2)))
-    ts
+    val ts1: RDD[(Long, Float)] = ts0.map({
+      kv =>
+        val row = new ArrayBuffer[(Long, Float)]
+        val basetime: Long = ByteBuffer.wrap(kv._1).getInt.toLong
+        val iterator = kv._2.entrySet().iterator()
+        var ctr = 0
+        while (iterator.hasNext) {
+          ctr += 1
+          val next = iterator.next()
+          val a = next.getKey
+          val b = next.getValue
+          val _delta = processQuantifier(a)
+          val delta = _delta.map(_._1)
+          val value = processValues(_delta, b)
+
+          for (i <- delta.indices)
+            row += ((basetime * 1000 + delta(i), value(i)))
+        }
+        row
+    }).flatMap(_.map(kv => (kv._1, kv._2)))
+    ts1
   }
 
   def write(timeseries: RDD[(String, Long, Float, Map[String, String])]): Unit = {
@@ -156,7 +157,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
     simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
-    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(1, 0, 0).build().getTime
+    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime
     val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
 
     val stDateBuffer = ByteBuffer.allocate(4)
@@ -202,7 +203,7 @@ object OpenTSDBContext {
         i = i + 2
       } else {
         val v = q(i).substring(4, 8) + q(i + 1) + q(i + 2) + q(i + 3).substring(0, 2) //The first 4 bits represents the size, the next 22 bits hold the delta
-        value = Integer.parseInt(v, 2) / 1000 //convert the delta to Int (milliseconds -> seconds)
+        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (milliseconds -> seconds)
         isInteger = q(i + 3).substring(4, 5) == "0" //The 29th bit represent the format of the value for the delta. 0=Integer, 1=Float
         valueLength = Integer.parseInt(q(i + 3).substring(5, 8), 2) //The last 3 bits represents the length of the value
         i = i + 4
