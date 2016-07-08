@@ -25,7 +25,7 @@ import org.apache.spark.{ SparkConf, SparkContext }
 
 object Main extends App {
 
-  val yarn = true
+  val yarn = false
 
   val initialExecutors = 4
 
@@ -72,7 +72,7 @@ object Main extends App {
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
   val openTSDBContext = new OpenTSDBContext(hbaseContext)
 
-  val ts = openTSDBContext.load("open", Map("symbol" -> "AAPL"))
+  val ts = openTSDBContext.load("open", Map("symbol" -> "AAPL"), Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
 
   val result = ts.collect()
 
