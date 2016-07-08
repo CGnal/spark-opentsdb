@@ -18,15 +18,15 @@ package com.cgnal.spark.opentsdb
 
 import java.nio.ByteBuffer
 import java.util
-import java.util.{Calendar, TimeZone}
+import java.util.{ Calendar, TimeZone }
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{Result, Scan}
+import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
+import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
@@ -37,12 +37,12 @@ import scala.collection.mutable.ArrayBuffer
 class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
   def load(
-            metricName: String,
-            tags: Map[String, String] = Map.empty[String, String],
-            startdate: Option[String] = None,
-            enddate: Option[String] = None,
-            dateFormat: String = "ddMMyyyyHH:mm"
-          ): RDD[(Long, Float)] = {
+    metricName: String,
+    tags: Map[String, String] = Map.empty[String, String],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None,
+    dateFormat: String = "ddMMyyyyHH:mm"
+  ): RDD[(Long, Float)] = {
 
     val uidScan = getUIDScan(metricName, tags)
 
@@ -56,7 +56,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       (
         tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagk".getBytes()))).filter(_._2 != null).collect.toMap,
         tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
-        )
+      )
     }
 
     if (metricsUID.length == 0)
@@ -77,7 +77,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       map(kv => (
         util.Arrays.copyOfRange(kv._1.copyBytes(), 3, 7),
         kv._2.getFamilyMap("t".getBytes())
-        ))
+      ))
 
     val ts1: RDD[(Long, Float)] = ts0.map({
       kv =>
@@ -130,13 +130,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
   }
 
   private def getMetricScan(
-                             tags: Map[String, String],
-                             metricsUID: Array[Array[Byte]],
-                             tagKUIDs: Map[String, Array[Byte]],
-                             tagVUIDs: Map[String, Array[Byte]],
-                             startdate: Option[String] = None,
-                             enddate: Option[String] = None
-                           ) = {
+    tags: Map[String, String],
+    metricsUID: Array[Array[Byte]],
+    tagKUIDs: Map[String, Array[Byte]],
+    tagVUIDs: Map[String, Array[Byte]],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None
+  ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
