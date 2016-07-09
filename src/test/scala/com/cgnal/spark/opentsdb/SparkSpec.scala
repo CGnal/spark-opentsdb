@@ -17,19 +17,18 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.time.{ Instant, ZoneId, ZonedDateTime }
-import java.util.{ Date, TimeZone }
+import java.time.{Instant, ZoneId, ZonedDateTime}
+import java.util.{Date, TimeZone}
 
 import net.opentsdb.core.TSDB
-import net.opentsdb.tools.FileImporter
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
+import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.hbase.async.HBaseClient
-import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
+import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
 
 import scala.collection.JavaConversions._
 
@@ -78,13 +77,13 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
-        tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2"))
+        tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
       }
 
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-06T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
-        tsdb.addPoint("mymetric", epoch, (i + 100).toLong, Map("key1" -> "value1", "key3" -> "value3"))
+        tsdb.addPoint("mymetric", epoch, (i + 100).toLong, Map("key1" -> "value1", "key3" -> "value3")).joinUninterruptibly()
       }
 
       // Default Date Format: dd/MM/yyyy HH:mm
@@ -95,10 +94,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         val result = ts.collect()
 
-        //result.length must be(10)
+        result.length must be(10)
 
-        result.foreach(p => println((p._1, p._2)))
-        //result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
       }
       println("------------")
 
@@ -154,7 +152,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   "Spark" must {
     "load a timeseries with milliseconds granularity correctly" in {
       for (i <- 0 until 10)
-        tsdb.addPoint("anothermetric", i.toLong, i.toLong, Map("key1" -> "value1", "key2" -> "value2"))
+        tsdb.addPoint("anothermetric", i.toLong, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
 
       val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), None, None)
 
@@ -168,9 +166,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
       /**
-       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
-       * ticker data.
-       */
+        * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
+        * ticker data.
+        */
       def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
         val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
           val tokens = line.split('\t')

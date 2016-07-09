@@ -145,7 +145,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       map(k => (k._2, tagVUIDs(tags(k._1)))).
       map(l => l._1 ++ l._2).toList.sorted(Ordering.by((_: Array[Byte]).toIterable))
     val scan = new Scan()
-    val name = if (tagKV.size > 0)
+    val name = if (tagKV.nonEmpty)
       String.format("^%s.*%s.*$", bytes2hex(metricsUID.last, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
     else
       String.format("^%s.*$", bytes2hex(metricsUID.last, "\\x"))
