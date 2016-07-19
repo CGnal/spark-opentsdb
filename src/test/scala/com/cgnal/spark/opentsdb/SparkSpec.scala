@@ -17,18 +17,18 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.time.{Instant, ZoneId, ZonedDateTime}
-import java.util.{Date, TimeZone}
+import java.time.{ Instant, ZoneId, ZonedDateTime }
+import java.util.{ Date, TimeZone }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
+import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
+import org.apache.spark.{ SparkConf, SparkContext }
 import org.hbase.async.HBaseClient
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
+import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 
 import scala.collection.JavaConversions._
 
@@ -166,9 +166,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
       /**
-        * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
-        * ticker data.
-        */
+       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
+       * ticker data.
+       */
       def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
         val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
           val tokens = line.split('\t')

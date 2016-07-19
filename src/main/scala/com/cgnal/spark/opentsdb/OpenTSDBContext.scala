@@ -243,7 +243,7 @@ object OpenTSDBContext {
         (sign * math.pow(2.toDouble, exp.toDouble) * significand).toFloat
       } else {
         val o = Integer.parseInt(_value, 2).toFloat
-        //#hotfix: signed interger ov value -1 is represented as 11111111, which gets converted to 255
+        //#hotfix: signed interger or value -1 is represented as 11111111, which gets converted to 255
         if (o == 255.0) -1.toFloat else o
       }
 
