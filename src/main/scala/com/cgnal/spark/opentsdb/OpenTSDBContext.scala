@@ -216,9 +216,6 @@ object OpenTSDBContext {
 
   //TODO: changes operations on binary strings to bits
   private def processValues(quantifier: Array[(Long, Boolean, Int)], values: Array[Byte]): Array[Float] = {
-    //converting Byte Arrays to a Array of binary string
-    val v = values.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) }).mkString
-
     val out = new ArrayBuffer[Float]
     var i = 0
     var j = 0
@@ -226,30 +223,21 @@ object OpenTSDBContext {
       //Is the value represented as integer or float
       val isInteger = quantifier(j)._2
       //The number of Byte in which the value has been encoded
-      val valueSize = quantifier(j)._3 * 8
+      val valueSize = quantifier(j)._3
       //Get the value for the current delta
-      val _value = v.substring(i, i + valueSize).mkString
-      val value = if (!isInteger) {
-        //See https://blog.penjee.com/binary-numbers-floating-point-conversion/
-        val sign = if (_value.substring(0, 1).compare("0") == 0) 1 else -1
-        val exp = Integer.parseInt(_value.substring(1, 9), 2) - 127
-        val significand = 1 + _value.substring(9).map({
-          var i = 0
-          m => {
-            i += 1
-            m.asDigit / math.pow(2.toDouble, i.toDouble)
-          }
-        }).sum
-        (sign * math.pow(2.toDouble, exp.toDouble) * significand).toFloat
-      } else {
-        val o = Integer.parseInt(_value, 2).toFloat
-        //#hotfix: signed interger or value -1 is represented as 11111111, which gets converted to 255
-        if (o == 255.0) -1.toFloat else o
+      val valueBytes = values.slice(i, i + valueSize)
+      val value = if (!isInteger)
+        ByteBuffer.wrap(valueBytes).getFloat()
+      else {
+        valueSize match {
+          case 1 =>
+            valueBytes(0).toFloat
+          case 4 =>
+            ByteBuffer.wrap(valueBytes).getInt().toFloat
+        }
       }
-
       i += valueSize
       j += 1
-
       out += value
     }
     out.toArray
