@@ -154,11 +154,11 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       for (i <- 0 until 10)
         tsdb.addPoint("anothermetric", i.toLong, (i - 10).toFloat, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
 
-      val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), None, None)
+      val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), None, None, conversionStrategy = ConvertToDouble)
 
       val result = ts.collect()
 
-      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Float](1))) must be((0 until 10).map(i => (i.toLong, (i - 10).toFloat)))
+      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](1))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
     }
   }
 

@@ -38,6 +38,7 @@ import shapeless.{ Coproduct, Poly1 }
 
 import scala.annotation.switch
 import scala.collection.mutable.ArrayBuffer
+import scala.language.reflectiveCalls
 
 class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
@@ -46,7 +47,8 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
     enddate: Option[String] = None,
-    dateFormat: String = "ddMMyyyyHH:mm"
+    dateFormat: String = "ddMMyyyyHH:mm",
+    conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[Row] = {
 
     val uidScan = getUIDScan(metricName, tags)
@@ -90,15 +92,23 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
           val values = processValues(quantifiers, b)
           deltas.zip(values).foreach(dv => {
             object ExtractValue extends Poly1 {
-              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+              def convert[A <: AnyVal](x: A): AnyVal = {
+                conversionStrategy match {
+                  case NoConversion => x
+                  case ConvertToFloat => x.asInstanceOf[{ def toFloat: Float }].toFloat
+                  case ConvertToDouble => x.asInstanceOf[{ def toDouble: Double }].toDouble
+                }
+              }
 
-              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
 
-              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
 
-              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
 
-              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+
+              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
             }
             dv._2 map ExtractValue
           })
