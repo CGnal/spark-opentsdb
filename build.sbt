@@ -59,9 +59,12 @@ val openTSDBVersion = "2.2.0"
 
 val sparkTSVersion = "0.3.0"
 
+val shapelessVersion = "2.3.1"
+
 resolvers ++= Seq(
-  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/",
-  "apache snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
+  Resolver.sonatypeRepo("releases"),
+  Resolver.sonatypeRepo("snapshots"),
+  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
 )
 
 val isALibrary = false //this is a library project
@@ -113,6 +116,7 @@ val assemblyDependencies = (scope: String) => Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % scope),
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % scope),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % scope),
+  "com.chuusai" %% "shapeless" % shapelessVersion % scope,
   "net.opentsdb" % "opentsdb" % openTSDBVersion % scope
     exclude("net.opentsdb", "opentsdb_gwt_theme")
     exclude("com.google.guava", "guava")
@@ -120,7 +124,7 @@ val assemblyDependencies = (scope: String) => Seq(
     exclude("com.google.gwt", "gwt-user")
     exclude("org.jboss.netty", "*")
     exclude("log4j", "*")
-    exclude("org.slf4j","*")
+    exclude("org.slf4j", "*")
 )
 
 val hadoopClientExcludes =

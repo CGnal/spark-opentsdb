@@ -18,7 +18,7 @@ package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
 import java.time.{ Instant, ZoneId, ZonedDateTime }
-import java.util.{ Date, TimeZone }
+import java.util.TimeZone
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
@@ -96,7 +96,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
       }
       println("------------")
 
@@ -108,7 +108,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
       }
       println("------------")
 
@@ -120,7 +120,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
       }
       println("------------")
 
@@ -132,7 +132,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
       }
       println("------------")
 
@@ -144,7 +144,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(new Timestamp(p._1)), p._2)))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
       }
     }
   }
@@ -152,13 +152,13 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   "Spark" must {
     "load a timeseries with milliseconds granularity correctly" in {
       for (i <- 0 until 10)
-        tsdb.addPoint("anothermetric", i.toLong, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
+        tsdb.addPoint("anothermetric", i.toLong, (i - 10).toFloat, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
 
       val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), None, None)
 
       val result = ts.collect()
 
-      result must be((0 until 10).map(i => (i.toLong, i.toFloat)))
+      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Float](1))) must be((0 until 10).map(i => (i.toLong, (i - 10).toFloat)))
     }
   }
 
@@ -175,13 +175,13 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
           val dt = ZonedDateTime.of(tokens(0).toInt, tokens(1).toInt, tokens(2).toInt, 0, 0, 0, 0,
             ZoneId.systemDefault())
           val symbol = tokens(3)
-          val price = tokens(5).toFloat
+          val price = tokens(5).toDouble
           Row(Timestamp.from(dt.toInstant), symbol, price)
         }
         val fields = Seq(
           StructField("timestamp", TimestampType, nullable = true),
           StructField("symbol", StringType, nullable = true),
-          StructField("price", FloatType, nullable = true)
+          StructField("price", DoubleType, nullable = true)
         )
         val schema = StructType(fields)
         sqlContext.createDataFrame(rowRdd, schema)
@@ -190,8 +190,8 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       val tickerObs = loadObservations(sqlContext, "data/ticker.tsv")
 
       //"timestamp", "symbol", "price"
-      //(String, Date, Float, Map[String, String])
-      val timeseries = tickerObs.map(row => ("ticker", row.getAs[Timestamp]("timestamp").getTime / 1000, row.getAs[Float]("price"), Map("symbol" -> row.getAs[String]("symbol"))))
+      //(String, Date, Double, Map[String, String])
+      val timeseries = tickerObs.map(row => ("ticker", row.getAs[Timestamp]("timestamp").getTime / 1000, row.getAs[Double]("price"), Map("symbol" -> row.getAs[String]("symbol"))))
 
       openTSDBContext.write(timeseries)
 
@@ -206,7 +206,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       println("---------")
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-      ts2.foreach(p => println((simpleDateFormat.format(new Date(p._1)), p._2)))
+      ts2.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Double](1))))
 
       ts1.length must be(ts2.length)
     }
