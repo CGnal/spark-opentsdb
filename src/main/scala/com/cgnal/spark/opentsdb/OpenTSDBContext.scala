@@ -32,6 +32,7 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
+import org.apache.spark.streaming.dstream.DStream
 import org.hbase.async.HBaseClient
 import shapeless.{ Coproduct, Poly1 }
 
@@ -70,38 +71,37 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       enddate
     )
     val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-
     val ts0: RDD[(Array[Byte], util.NavigableMap[Array[Byte], Array[Byte]])] = tsdb.
       map(kv => (
         util.Arrays.copyOfRange(kv._1.copyBytes(), 3, 7),
         kv._2.getFamilyMap("t".getBytes())
       ))
-
     val ts1: RDD[Row] = ts0.map(
       kv => {
         val rows = new ArrayBuffer[Row]
         val basetime: Long = ByteBuffer.wrap(kv._1).getInt.toLong
         val iterator = kv._2.entrySet().iterator()
-        var ctr = 0
         while (iterator.hasNext) {
-          ctr += 1
           val next = iterator.next()
           val a = next.getKey
           val b = next.getValue
-          val _delta = processQuantifier(a)
-          val delta = _delta.map(_._1)
-          val values = processValues(_delta, b)
-          for (i <- delta.indices) {
-            val value = values(i)
+          val quantifiers = processQuantifier(a)
+          val deltas = quantifiers.map(_._1)
+          val values = processValues(quantifiers, b)
+          deltas.zip(values).foreach(dv => {
             object ExtractValue extends Poly1 {
-              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + delta(i)), x))
-              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + delta(i)), x))
-              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + delta(i)), x))
-              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + delta(i)), x))
-              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + delta(i)), x))
+              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+
+              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+
+              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+
+              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
+
+              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), x))
             }
-            value map ExtractValue
-          }
+            dv._2 map ExtractValue
+          })
         }
         rows
       }
@@ -125,6 +125,24 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
         tsdb.addPoint(record._1, record._2, record._3, record._4)
       })
     })
+  }
+
+  def streamWrite(dstream: DStream[(String, Long, Double, Map[String, String])]): Unit = {
+    val hbaseConfig = this.hbaseContext.config
+    val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
+    val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
+    dstream.foreachRDD(timeseries => timeseries.foreachPartition(it => {
+      val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
+      val config = new Config(false)
+      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
+      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+      config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      val tsdb = new TSDB(hbaseAsyncClient, config)
+      import collection.JavaConversions._
+      it.foreach(record => {
+        tsdb.addPoint(record._1, record._2, record._3, record._4)
+      })
+    }))
   }
 
   private def getUIDScan(metricName: String, tags: Map[String, String]) = {
