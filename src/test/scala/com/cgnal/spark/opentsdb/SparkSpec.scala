@@ -17,59 +17,15 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.time.{Instant, ZoneId, ZonedDateTime}
+import java.time.{ Instant, ZoneId, ZonedDateTime }
 import java.util.TimeZone
 
-import net.opentsdb.core.TSDB
-import net.opentsdb.utils.Config
-import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
-import org.apache.spark.{SparkConf, SparkContext}
-import org.hbase.async.HBaseClient
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 
 import scala.collection.JavaConversions._
 
-class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
-
-  val hbaseUtil = new HBaseTestingUtility()
-
-  var sparkContext: SparkContext = _
-
-  var hbaseContext: HBaseContext = _
-
-  var openTSDBContext: OpenTSDBContext = _
-
-  var sqlContext: SQLContext = _
-
-  var hbaseAsyncClient: HBaseClient = _
-
-  var tsdb: TSDB = _
-
-  override def beforeAll(): Unit = {
-    hbaseUtil.startMiniCluster(10)
-    val conf = new SparkConf().
-      setAppName("spark-cdh5-template-local-test").
-      setMaster("local")
-    sparkContext = new SparkContext(conf)
-    hbaseContext = new HBaseContext(sparkContext, hbaseUtil.getConfiguration)
-    sqlContext = new SQLContext(sparkContext)
-    openTSDBContext = new OpenTSDBContext(hbaseContext, Some(sqlContext))
-    hbaseUtil.createTable(TableName.valueOf("tsdb-uid"), Array("id", "name"))
-    hbaseUtil.createTable(TableName.valueOf("tsdb"), Array("t"))
-    hbaseUtil.createTable(TableName.valueOf("tsdb-tree"), Array("t"))
-    hbaseUtil.createTable(TableName.valueOf("tsdb-meta"), Array("name"))
-    val quorum = hbaseUtil.getConfiguration.get("hbase.zookeeper.quorum")
-    val port = hbaseUtil.getConfiguration.get("hbase.zookeeper.property.clientPort")
-    hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
-    val config = new Config(false)
-    config.overrideConfig("tsd.storage.hbase.data_table", "tsdb")
-    config.overrideConfig("tsd.storage.hbase.uid_table", "tsdb-uid")
-    config.overrideConfig("tsd.core.auto_create_metrics", "true")
-    tsdb = new TSDB(hbaseAsyncClient, config)
-  }
+class SparkSpec extends SparkBaseSpec {
 
   "Spark" must {
     "load a timeseries from OpenTSDB correctly" in {
@@ -166,9 +122,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
       /**
-        * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
-        * ticker data.
-        */
+       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
+       * ticker data.
+       */
       def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
         val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
           val tokens = line.split('\t')
@@ -234,15 +190,7 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
       }
     }
-  }
 
-  override def afterAll(): Unit = {
-    sparkContext.stop()
-    hbaseUtil.deleteTable("tsdb-uid")
-    hbaseUtil.deleteTable("tsdb")
-    hbaseUtil.deleteTable("tsdb-tree")
-    hbaseUtil.deleteTable("tsdb-meta")
-    hbaseUtil.shutdownMiniCluster()
   }
 
 }

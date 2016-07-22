@@ -164,18 +164,22 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
     val hbaseConfig = this.hbaseContext.config
     val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
     val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
-    dstream.foreachRDD(timeseries => timeseries.foreachPartition(it => {
-      val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      val tsdb = new TSDB(hbaseAsyncClient, config)
-      import collection.JavaConversions._
-      it.foreach(record => {
-        tsdb.addPoint(record._1, record._2, record._3, record._4)
-      })
-    }))
+    dstream.foreachRDD { timeseries =>
+      timeseries.foreachPartition { it =>
+        val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
+        val config = new Config(false)
+        config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
+        config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+        config.overrideConfig("tsd.core.auto_create_metrics", "true")
+        val tsdb = new TSDB(hbaseAsyncClient, config)
+        import collection.JavaConversions._
+        it.foreach(record => {
+          tsdb.addPoint(record._1, record._2, record._3, record._4)
+        })
+        hbaseAsyncClient.shutdown()
+        ()
+      }
+    }
   }
 
   private def getUIDScan(metricName: String, tags: Map[String, String]) = {
