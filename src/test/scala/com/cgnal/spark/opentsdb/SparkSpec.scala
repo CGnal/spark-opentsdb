@@ -17,18 +17,18 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.time.{ Instant, ZoneId, ZonedDateTime }
+import java.time.{Instant, ZoneId, ZonedDateTime}
 import java.util.TimeZone
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
+import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.hbase.async.HBaseClient
-import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
+import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
 
 import scala.collection.JavaConversions._
 
@@ -55,8 +55,8 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       setMaster("local")
     sparkContext = new SparkContext(conf)
     hbaseContext = new HBaseContext(sparkContext, hbaseUtil.getConfiguration)
-    openTSDBContext = new OpenTSDBContext(hbaseContext)
     sqlContext = new SQLContext(sparkContext)
+    openTSDBContext = new OpenTSDBContext(hbaseContext, Some(sqlContext))
     hbaseUtil.createTable(TableName.valueOf("tsdb-uid"), Array("id", "name"))
     hbaseUtil.createTable(TableName.valueOf("tsdb"), Array("t"))
     hbaseUtil.createTable(TableName.valueOf("tsdb-tree"), Array("t"))
@@ -166,9 +166,9 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
       /**
-       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
-       * ticker data.
-       */
+        * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
+        * ticker data.
+        */
       def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
         val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
           val tokens = line.split('\t')
@@ -209,6 +209,30 @@ class SparkSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
       ts2.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Double](1))))
 
       ts1.length must be(ts2.length)
+    }
+
+    "Spark" must {
+      "load a timeseries dataframe from OpenTSDB correctly" in {
+
+        for (i <- 0 until 10) {
+          val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
+          val epoch = ts.getTime
+          tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
+        }
+
+        val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+        simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+        val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+
+        df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
+
+        val result = df.collect()
+
+        result.length must be(10)
+
+        result.foreach(println(_))
+
+      }
     }
   }
 

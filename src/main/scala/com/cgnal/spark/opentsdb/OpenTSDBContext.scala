@@ -31,7 +31,8 @@ import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
 import org.hbase.async.HBaseClient
 import shapeless.{ Coproduct, Poly1 }
@@ -40,7 +41,29 @@ import scala.annotation.switch
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
-class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext] = None, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+
+  def loadDataFrame(
+    metricName: String,
+    tags: Map[String, String] = Map.empty[String, String],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None,
+    dateFormat: String = "ddMMyyyyHH:mm",
+    conversionStrategy: ConversionStrategy = ConvertToDouble
+  ): DataFrame = {
+    assert(sqlContext.isDefined) //TODO better error handling
+    assert(conversionStrategy != NoConversion) //TODO better error handling
+
+    val schema = StructType(Array(StructField("timestamp", TimestampType, false), conversionStrategy match {
+      case ConvertToFloat => StructField("value", FloatType, false)
+      case ConvertToDouble => StructField("value", DoubleType, false)
+      case NoConversion => throw new Exception("") //TODO better error handling
+    }))
+
+    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy)
+
+    sqlContext.get.createDataFrame(rowRDD, schema)
+  }
 
   def load(
     metricName: String,
