@@ -23,7 +23,6 @@ import java.util.{ Calendar, TimeZone }
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
 import net.opentsdb.core.TSDB
-import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
@@ -34,7 +33,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
-import org.hbase.async.HBaseClient
 import shapeless.{ Coproduct, Poly1 }
 
 import scala.annotation.switch
@@ -54,9 +52,9 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
     assert(sqlContext.isDefined) //TODO better error handling
     assert(conversionStrategy != NoConversion) //TODO better error handling
 
-    val schema = StructType(Array(StructField("timestamp", TimestampType, false), conversionStrategy match {
-      case ConvertToFloat => StructField("value", FloatType, false)
-      case ConvertToDouble => StructField("value", DoubleType, false)
+    val schema = StructType(Array(StructField("timestamp", TimestampType, nullable = false), conversionStrategy match {
+      case ConvertToFloat => StructField("value", FloatType, nullable = false)
+      case ConvertToDouble => StructField("value", DoubleType, nullable = false)
       case NoConversion => throw new Exception("") //TODO better error handling
     }))
 
@@ -142,42 +140,24 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
     ts1
   }
 
-  def write(timeseries: RDD[(String, Long, Double, Map[String, String])]): Unit = {
+  def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     val hbaseConfig = this.hbaseContext.config
     val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
     val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     timeseries.foreachPartition(it => {
-      val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      val tsdb = new TSDB(hbaseAsyncClient, config)
-      import collection.JavaConversions._
-      it.foreach(record => {
-        tsdb.addPoint(record._1, record._2, record._3, record._4)
-      })
+      TSDBClientManager(quorum, port)
+      writeFunc(it, TSDBClientManager.tsdb)
     })
   }
 
-  def streamWrite(dstream: DStream[(String, Long, Double, Map[String, String])]): Unit = {
+  def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     val hbaseConfig = this.hbaseContext.config
     val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
     val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     dstream.foreachRDD { timeseries =>
       timeseries.foreachPartition { it =>
-        val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
-        val config = new Config(false)
-        config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-        config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-        config.overrideConfig("tsd.core.auto_create_metrics", "true")
-        val tsdb = new TSDB(hbaseAsyncClient, config)
-        import collection.JavaConversions._
-        it.foreach(record => {
-          tsdb.addPoint(record._1, record._2, record._3, record._4)
-        })
-        hbaseAsyncClient.shutdown()
-        ()
+        TSDBClientManager(quorum, port)
+        writeFunc(it, TSDBClientManager.tsdb)
       }
     }
   }
@@ -237,9 +217,9 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
 
 object OpenTSDBContext {
 
-  var tsdbTable = "tsdb"
+  def setTsdbTable(table: String) = tsdbTable = table
 
-  var tsdbUidTable = "tsdb-uid"
+  def setTsdbUidTable(table: String) = tsdbUidTable = table
 
   //TODO: changes operations on binary strings to bits
   private def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
