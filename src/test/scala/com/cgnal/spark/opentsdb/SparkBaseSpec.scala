@@ -21,6 +21,7 @@ import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.streaming.{ Milliseconds, StreamingContext }
 import org.apache.spark.{ SparkConf, SparkContext }
 import org.hbase.async.HBaseClient
 import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
@@ -30,6 +31,8 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   val hbaseUtil = new HBaseTestingUtility()
 
   var sparkContext: SparkContext = _
+
+  var streamingContext: StreamingContext = _
 
   var hbaseContext: HBaseContext = _
 
@@ -42,11 +45,12 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   var tsdb: TSDB = _
 
   override def beforeAll(): Unit = {
-    hbaseUtil.startMiniCluster(1)
+    hbaseUtil.startMiniCluster(10)
     val conf = new SparkConf().
       setAppName("spark-cdh5-template-local-test").
       setMaster("local")
     sparkContext = new SparkContext(conf)
+    streamingContext = new StreamingContext(sparkContext, Milliseconds(200))
     hbaseContext = new HBaseContext(sparkContext, hbaseUtil.getConfiguration)
     sqlContext = new SQLContext(sparkContext)
     openTSDBContext = new OpenTSDBContext(hbaseContext, Some(sqlContext))
@@ -65,7 +69,10 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   }
 
   override def afterAll(): Unit = {
+    streamingContext.stop(false)
+    streamingContext.awaitTermination()
     sparkContext.stop()
+    tsdb.shutdown()
     hbaseUtil.deleteTable("tsdb-uid")
     hbaseUtil.deleteTable("tsdb")
     hbaseUtil.deleteTable("tsdb-tree")

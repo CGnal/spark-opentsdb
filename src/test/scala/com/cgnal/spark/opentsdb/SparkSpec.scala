@@ -24,6 +24,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 
 class SparkSpec extends SparkBaseSpec {
 
@@ -166,31 +167,64 @@ class SparkSpec extends SparkBaseSpec {
 
       ts1.length must be(ts2.length)
     }
+  }
 
-    "Spark" must {
-      "load a timeseries dataframe from OpenTSDB correctly" in {
+  "Spark" must {
+    "load a timeseries dataframe from OpenTSDB correctly" in {
 
-        for (i <- 0 until 10) {
-          val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
-          val epoch = ts.getTime
-          tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
-        }
-
-        val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-        simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-        val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
-
-        df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
-
-        val result = df.collect()
-
-        result.length must be(10)
-
-        result.foreach(println(_))
-
+      for (i <- 0 until 10) {
+        val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
+        val epoch = ts.getTime
+        tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
       }
-    }
 
+      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+
+      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
+
+      val result = df.collect()
+
+      result.length must be(10)
+
+      result.foreach(println(_))
+
+    }
+  }
+
+  "Spark" must {
+    "save timeseries points from a Spark stream correctly" in {
+
+      val points = for {
+        i <- 0 until 10
+        ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
+        epoch = ts.getTime
+        point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+      } yield point
+
+      val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
+
+      val stream = streamingContext.queueStream[(String, Long, Double, Map[String, String])](mutable.Queue(rdd))
+
+      openTSDBContext.streamWrite(stream)
+
+      streamingContext.start()
+
+      Thread.sleep(1000)
+
+      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+
+      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
+
+      val result = df.collect()
+
+      result.length must be(10)
+
+      result.foreach(println(_))
+    }
   }
 
 }
