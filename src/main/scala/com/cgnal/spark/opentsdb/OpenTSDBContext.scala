@@ -39,9 +39,10 @@ import scala.annotation.switch
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
-class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext] = None, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
   def loadDataFrame(
+    sqlContext: SQLContext,
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
@@ -49,7 +50,6 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
     dateFormat: String = "ddMMyyyyHH:mm",
     conversionStrategy: ConversionStrategy = ConvertToDouble
   ): DataFrame = {
-    assert(sqlContext.isDefined) //TODO better error handling
     assert(conversionStrategy != NoConversion) //TODO better error handling
 
     val schema = StructType(Array(StructField("timestamp", TimestampType, nullable = false), conversionStrategy match {
@@ -60,7 +60,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, sqlContext: Option[SQLContext]
 
     val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy)
 
-    sqlContext.get.createDataFrame(rowRDD, schema)
+    sqlContext.createDataFrame(rowRDD, schema)
   }
 
   def load(

@@ -180,7 +180,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
       df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
 
@@ -215,7 +215,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
       df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
 
