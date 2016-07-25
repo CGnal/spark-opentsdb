@@ -67,8 +67,6 @@ resolvers ++= Seq(
   "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
 )
 
-val isALibrary = false //this is a library project
-
 val sparkExcludes =
   (moduleId: ModuleID) => moduleId.
     exclude("org.apache.hadoop", "hadoop-client").
@@ -105,19 +103,20 @@ val hbaseExcludes =
     exclude("commons-logging", "commons-logging").
     exclude("org.apache.xmlgraphics", "batik-ext").
     exclude("commons-collections", "commons-collections").
-    exclude("xom", "xom")
+    exclude("xom", "xom").
+    exclude("commons-beanutils", "commons-beanutils")
 
-val assemblyDependencies = (scope: String) => Seq(
-  sparkExcludes("org.apache.spark" %% "spark-streaming-kafka" % sparkVersion % scope),
-  sparkExcludes("org.apache.hbase" % "hbase-spark" % hbaseVersion % scope),
-  sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % scope),
-  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % scope),
-  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % scope),
-  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % scope),
-  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % scope),
-  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % scope),
-  "com.chuusai" %% "shapeless" % shapelessVersion % scope,
-  "net.opentsdb" % "opentsdb" % openTSDBVersion % scope
+val assemblyDependencies = Seq(
+  sparkExcludes("org.apache.spark" %% "spark-streaming-kafka" % sparkVersion % "compile"),
+  sparkExcludes("org.apache.hbase" % "hbase-spark" % hbaseVersion % "compile"),
+  sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % "compile"),
+  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
+  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % "compile"),
+  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
+  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
+  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
+  "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
+  "net.opentsdb" % "opentsdb" % openTSDBVersion % "compile"
     exclude("net.opentsdb", "opentsdb_gwt_theme")
     exclude("com.google.guava", "guava")
     exclude("ch.qos.logback", "*")
@@ -132,26 +131,20 @@ val hadoopClientExcludes =
     exclude("org.slf4j", "slf4j-api").
     exclude("javax.servlet", "servlet-api")
 
-/*if it's a library the scope is "compile" since we want the transitive dependencies on the library
-  otherwise we set up the scope to "provided" because those dependencies will be assembled in the "assembly"*/
-lazy val assemblyDependenciesScope: String = if (isALibrary) "compile" else "provided"
-
-lazy val hadoopDependenciesScope = if (isALibrary) "provided" else "compile"
-
 libraryDependencies ++= Seq(
-  sparkExcludes("com.databricks" %% "spark-avro" % sparkAvroVersion % hadoopDependenciesScope),
-  sparkExcludes("org.apache.spark" %% "spark-core" % sparkVersion % hadoopDependenciesScope),
-  sparkExcludes("org.apache.spark" %% "spark-sql" % sparkVersion % hadoopDependenciesScope),
-  sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % hadoopDependenciesScope),
-  sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % hadoopDependenciesScope),
-  sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-applications-distributedshell" % hadoopVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-server-web-proxy" % hadoopVersion % hadoopDependenciesScope),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % hadoopDependenciesScope)
-) ++ assemblyDependencies(assemblyDependenciesScope)
+  sparkExcludes("com.databricks" %% "spark-avro" % sparkAvroVersion % "provided"),
+  sparkExcludes("org.apache.spark" %% "spark-core" % sparkVersion % "provided"),
+  sparkExcludes("org.apache.spark" %% "spark-sql" % sparkVersion % "provided"),
+  sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % "provided"),
+  sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % "provided"),
+  sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-applications-distributedshell" % hadoopVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-server-web-proxy" % hadoopVersion % "provided"),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "provided")
+) ++ assemblyDependencies
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
 run in Compile <<= Defaults.runTask(fullClasspath in Compile, mainClass in(Compile, run), runner in(Compile, run))
@@ -200,7 +193,6 @@ lazy val root = (project in file(".")).
     )
   ).
   enablePlugins(AutomateHeaderPlugin).
-  enablePlugins(JavaAppPackaging).
   disablePlugins(AssemblyPlugin)
 
 lazy val projectAssembly = (project in file("assembly")).
@@ -215,24 +207,9 @@ lazy val projectAssembly = (project in file("assembly")).
         oldStrategy(x)
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
-    libraryDependencies ++= assemblyDependencies("compile")
+    libraryDependencies ++= assemblyDependencies
   ) dependsOn root settings (
   projectDependencies := {
     Seq(
-      (projectID in root).value.excludeAll(ExclusionRule(organization = "org.apache.spark"),
-        if (!isALibrary) ExclusionRule(organization = "org.apache.hadoop") else ExclusionRule(),
-        if (!isALibrary) ExclusionRule(organization = "org.apache.hbase") else ExclusionRule())
-    )
+      (projectID in root).value.excludeAll(ExclusionRule(organization = "org.apache.spark")))
   })
-
-mappings in Universal := {
-  val universalMappings = (mappings in Universal).value
-  val filtered = universalMappings filter {
-    case (f, n) =>
-      !n.endsWith(s"${organization.value}.${name.value}-${version.value}.jar")
-  }
-  val fatJar: File = new File(s"${System.getProperty("user.dir")}/assembly/target/scala-2.10/$assemblyName-${version.value}.jar")
-  filtered :+ (fatJar -> ("lib/" + fatJar.getName))
-}
-
-scriptClasspath ++= Seq(s"$assemblyName-${version.value}.jar")
