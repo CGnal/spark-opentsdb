@@ -18,10 +18,12 @@ package com.cgnal.spark.opentsdb
 
 import java.nio.ByteBuffer
 import java.sql.Timestamp
+import java.time._
 import java.util
 import java.util.{ Calendar, TimeZone }
 
 import com.cgnal.spark.opentsdb.OpenTSDBContext._
+import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.{ Result, Scan }
@@ -41,18 +43,65 @@ import scala.language.reflectiveCalls
 
 class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
+  def loadTimeSeriesRDD(
+    sqlContext: SQLContext,
+    startdate: String,
+    enddate: String,
+    frequency: Frequency,
+    metrics: List[(String, Map[String, String])],
+    dateFormat: String = this.dateFormat,
+    conversionStrategy: ConversionStrategy = ConvertToDouble
+  ): TimeSeriesRDD[String] = {
+
+    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
+    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+
+    val startDateEpochInMillis: Long = simpleDateFormat.parse(startdate).getTime
+    val endDateEpochInInMillis: Long = simpleDateFormat.parse(enddate).getTime - 1
+
+    LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
+
+    val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
+    val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
+
+    var index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC"))
+    index = index.atZone(ZoneId.of("UTC"))
+
+    val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
+      sqlContext,
+      m._1,
+      m._2,
+      Some(startdate),
+      Some(enddate),
+      dateFormat,
+      ConvertToDouble
+    ))
+
+    val initDF = dfs.headOption.get
+    val otherDFs = dfs.drop(1)
+    val observations = otherDFs.fold(initDF)((df1, df2) => df1.unionAll(df2))
+
+    TimeSeriesRDD.timeSeriesRDDFromObservations(
+      index,
+      observations,
+      "timestamp",
+      "key",
+      "value"
+    )
+  }
+
   def loadDataFrame(
     sqlContext: SQLContext,
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
     enddate: Option[String] = None,
-    dateFormat: String = "ddMMyyyyHH:mm",
+    dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = ConvertToDouble
   ): DataFrame = {
     assert(conversionStrategy != NoConversion) //TODO better error handling
 
-    val schema = StructType(Array(StructField("timestamp", TimestampType, nullable = false), conversionStrategy match {
+    val schema = StructType(Array(StructField("timestamp", TimestampType, nullable = false), StructField("key", StringType, nullable = false), conversionStrategy match {
       case ConvertToFloat => StructField("value", FloatType, nullable = false)
       case ConvertToDouble => StructField("value", DoubleType, nullable = false)
       case NoConversion => throw new Exception("") //TODO better error handling
@@ -68,7 +117,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
     enddate: Option[String] = None,
-    dateFormat: String = "ddMMyyyyHH:mm",
+    dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[Row] = {
 
@@ -91,7 +140,8 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       tagKUIDs,
       tagVUIDs,
       startdate,
-      enddate
+      enddate,
+      dateFormat
     )
     val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
     val ts0: RDD[(Array[Byte], util.NavigableMap[Array[Byte], Array[Byte]])] = tsdb.
@@ -121,15 +171,15 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
                 }
               }
 
-              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x)))
 
-              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x)))
 
-              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x)))
 
-              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x)))
 
-              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x)))
+              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x)))
             }
             dv._2 map ExtractValue
           })
@@ -176,8 +226,9 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     metricsUID: Array[Array[Byte]],
     tagKUIDs: Map[String, Array[Byte]],
     tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String] = None,
-    enddate: Option[String] = None
+    startdate: Option[String],
+    enddate: Option[String],
+    dateFormat: String
   ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray

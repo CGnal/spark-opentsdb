@@ -17,11 +17,12 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.time.{ Instant, ZoneId, ZonedDateTime }
+import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.TimeZone
 
+import com.cloudera.sparkts.MillisecondFrequency
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -53,7 +54,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
       }
       println("------------")
 
@@ -65,7 +66,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
       }
       println("------------")
 
@@ -77,7 +78,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
       }
       println("------------")
 
@@ -89,7 +90,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
       }
       println("------------")
 
@@ -101,7 +102,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](1))))
+        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
       }
     }
   }
@@ -115,57 +116,47 @@ class SparkSpec extends SparkBaseSpec {
 
       val result = ts.collect()
 
-      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](1))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
+      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](2))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
     }
   }
 
   "Spark" must {
-    "load a timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
+    "load timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
-      /**
-       * Creates a Spark DataFrame of (timestamp, symbol, price) from a tab-separated file of stock
-       * ticker data.
-       */
-      def loadObservations(sqlContext: SQLContext, path: String): DataFrame = {
-        val rowRdd = sqlContext.sparkContext.textFile(path).map { line =>
-          val tokens = line.split('\t')
-          val dt = ZonedDateTime.of(tokens(0).toInt, tokens(1).toInt, tokens(2).toInt, 0, 0, 0, 0,
-            ZoneId.systemDefault())
-          val symbol = tokens(3)
-          val price = tokens(5).toDouble
-          Row(Timestamp.from(dt.toInstant), symbol, price)
-        }
-        val fields = Seq(
-          StructField("timestamp", TimestampType, nullable = true),
-          StructField("symbol", StringType, nullable = true),
-          StructField("price", DoubleType, nullable = true)
-        )
-        val schema = StructType(fields)
-        sqlContext.createDataFrame(rowRdd, schema)
+      for (i <- 0 until 1000) {
+        tsdb.addPoint("metric1", i.toLong, (i - 10).toFloat, Map("key1" -> "value1"))
+        tsdb.addPoint("metric2", i.toLong, (i - 20).toFloat, Map("key1" -> "value1"))
+        tsdb.addPoint("metric3", i.toLong, (i - 30).toFloat, Map("key1" -> "value1"))
+        tsdb.addPoint("metric4", i.toLong, (i - 40).toFloat, Map("key1" -> "value1"))
+        tsdb.addPoint("metric5", i.toLong, (i - 50).toFloat, Map("key1" -> "value1"))
       }
 
-      val tickerObs = loadObservations(sqlContext, "data/ticker.tsv")
+      val startDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:00.000Z"))
+      val endDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:01.00Z"))
+      val simpleDateFormat = new SimpleDateFormat("yyyy-MM-ss mm-ss-SSS")
+      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
-      //"timestamp", "symbol", "price"
-      //(String, Date, Double, Map[String, String])
-      val timeseries = tickerObs.map(row => ("ticker", row.getAs[Timestamp]("timestamp").getTime / 1000, row.getAs[Double]("price"), Map("symbol" -> row.getAs[String]("symbol"))))
+      val ts = openTSDBContext.loadTimeSeriesRDD(
+        sqlContext,
+        simpleDateFormat.format(startDate),
+        simpleDateFormat.format(endDate),
+        new MillisecondFrequency(1),
+        List(
+          "metric1" -> Map("key1" -> "value1"),
+          "metric2" -> Map("key1" -> "value1"),
+          "metric3" -> Map("key1" -> "value1"),
+          "metric4" -> Map("key1" -> "value1"),
+          "metric5" -> Map("key1" -> "value1")
+        ),
+        "yyyy-MM-ss mm-ss-SSS"
+      )
 
-      openTSDBContext.write(timeseries)
+      ts.findSeries("metric1").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+      ts.findSeries("metric2").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+      ts.findSeries("metric3").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+      ts.findSeries("metric4").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+      ts.findSeries("metric5").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
 
-      tickerObs.registerTempTable("tickerObs")
-
-      val ts1 = sqlContext.sql("select * from tickerObs where symbol = 'CSCO' sort by(timestamp)").collect()
-
-      val ts2 = openTSDBContext.load(metricName = "ticker", tags = Map("symbol" -> "CSCO")).collect()
-
-      ts1.foreach(println(_))
-
-      println("---------")
-
-      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-      ts2.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Double](1))))
-
-      ts1.length must be(ts2.length)
     }
   }
 
@@ -182,7 +173,7 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
       val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
-      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
+      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("key", StringType, nullable = false), StructField("value", FloatType, false))))
 
       val result = df.collect()
 
@@ -217,7 +208,7 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
       val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
-      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("value", FloatType, false))))
+      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("key", StringType, nullable = false), StructField("value", FloatType, false))))
 
       val result = df.collect()
 
