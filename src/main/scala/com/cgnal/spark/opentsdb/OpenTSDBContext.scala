@@ -20,28 +20,32 @@ import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.time._
 import java.util
-import java.util.{ Calendar, TimeZone }
+import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.OpenTSDBContext._
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{ Result, Scan }
-import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
-import shapeless.{ Coproduct, Poly1 }
+import shapeless.Poly1
 
-import scala.annotation.switch
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
 class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+
+  var tsdbTable = "tsdb"
+
+  var tsdbUidTable = "tsdb-uid"
+
+  var tagkWidth: Byte = 3
+
+  var tagvWidth: Byte = 3
 
   def loadTimeSeriesRDD(
     sqlContext: SQLContext,
@@ -195,7 +199,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
     val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     timeseries.foreachPartition(it => {
-      TSDBClientManager(quorum, port)
+      TSDBClientManager(quorum = quorum, port = port, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       writeFunc(it, TSDBClientManager.tsdb)
     })
   }
@@ -206,161 +210,10 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     dstream.foreachRDD { timeseries =>
       timeseries.foreachPartition { it =>
-        TSDBClientManager(quorum, port)
+        TSDBClientManager(quorum = quorum, port = port, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         writeFunc(it, TSDBClientManager.tsdb)
       }
     }
-  }
-
-  private def getUIDScan(metricName: String, tags: Map[String, String]) = {
-    val scan = new Scan()
-    val name: String = String.format("^%s$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
-    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
-    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
-    scan.setFilter(rowFilter)
-    scan
-  }
-
-  private def getMetricScan(
-    tags: Map[String, String],
-    metricsUID: Array[Array[Byte]],
-    tagKUIDs: Map[String, Array[Byte]],
-    tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String],
-    enddate: Option[String],
-    dateFormat: String
-  ) = {
-    val tagKKeys = tagKUIDs.keys.toArray
-    val tagVKeys = tagVUIDs.keys.toArray
-    val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
-    val tagKV = tagKUIDs.
-      filter(kv => ntags.contains(kv._1)).
-      map(k => (k._2, tagVUIDs(tags(k._1)))).
-      map(l => l._1 ++ l._2).toList.sorted(Ordering.by((_: Array[Byte]).toIterable))
-    val scan = new Scan()
-    val name = if (tagKV.nonEmpty)
-      String.format("^%s.*%s.*$", bytes2hex(metricsUID.last, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
-    else
-      String.format("^%s.*$", bytes2hex(metricsUID.last, "\\x"))
-
-    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
-    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
-    scan.setFilter(rowFilter)
-
-    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
-    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime
-    val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
-
-    val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.get else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
-
-    val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
-
-    scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-    scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-    scan
-  }
-
-}
-
-object OpenTSDBContext {
-
-  def setTsdbTable(table: String) = tsdbTable = table
-
-  def setTsdbUidTable(table: String) = tsdbUidTable = table
-
-  //TODO: changes operations on binary strings to bits
-  private def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
-    //converting Byte Arrays to a Array of binary string
-    val q = quantifier.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) })
-    var i = 0
-    val out = new ArrayBuffer[(Long, Boolean, Int)]
-    while (i != q.length) {
-      var value: Long = -1
-      var isInteger = true
-      var valueLength = -1
-      var isQuantifierSizeTypeSmall = true
-      //If the 1st 4 bytes are in format "1111", the size of the column quantifier is 4 bytes. Else 2 bytes
-      if (q(i).startsWith("1111")) {
-        isQuantifierSizeTypeSmall = false
-      }
-
-      if (isQuantifierSizeTypeSmall) {
-        val v = q(i) + q(i + 1).substring(0, 4) //The 1st 12 bits represent the delta
-        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (seconds)
-        isInteger = q(i + 1).substring(4, 5) == "0" //The 13th bit represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = Integer.parseInt(q(i + 1).substring(5, 8), 2) //The last 3 bits represents the length of the value
-        i = i + 2
-      } else {
-        val v = q(i).substring(4, 8) + q(i + 1) + q(i + 2) + q(i + 3).substring(0, 2) //The first 4 bits represents the size, the next 22 bits hold the delta
-        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (milliseconds -> seconds)
-        isInteger = q(i + 3).substring(4, 5) == "0" //The 29th bit represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = Integer.parseInt(q(i + 3).substring(5, 8), 2) //The last 3 bits represents the length of the value
-        i = i + 4
-      }
-      out += ((value, isInteger, valueLength + 1))
-    }
-    out.toArray
-  }
-
-  private def processValues(quantifier: Array[(Long, Boolean, Int)], values: Array[Byte]): Array[Value] = {
-    val out = new ArrayBuffer[Value]
-    var i = 0
-    var j = 0
-    while (j < quantifier.length) {
-      //Is the value represented as integer or float
-      val isInteger = quantifier(j)._2
-      //The number of Byte in which the value has been encoded
-      val valueSize = quantifier(j)._3
-      //Get the value for the current delta
-      val valueBytes = values.slice(i, i + valueSize)
-      val value = if (!isInteger) {
-        (valueSize: @switch) match {
-          case 4 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getFloat())
-          case 8 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getDouble())
-        }
-      } else {
-        (valueSize: @switch) match {
-          case 1 =>
-            Coproduct[Value](valueBytes(0))
-          case 4 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getInt())
-          case 8 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getLong())
-        }
-      }
-      i += valueSize
-      j += 1
-      out += value
-    }
-    out.toArray
-  }
-
-  private def bytes2hex(bytes: Array[Byte], sep: String): String = {
-    sep + bytes.map("%02x".format(_)).mkString(sep)
-  }
-
-  private def hexStringToByteArray(s: String): Array[Byte] = {
-    val sn = s.replace("\\x", "")
-    val b: Array[Byte] = new Array[Byte](sn.length / 2)
-    var i: Int = 0
-    while (i < b.length) {
-      {
-        val index: Int = i * 2
-        val v: Int = Integer.parseInt(sn.substring(index, index + 2), 16)
-        b(i) = v.toByte
-      }
-      {
-        i += 1
-        i - 1
-      }
-    }
-    b
   }
 
 }
