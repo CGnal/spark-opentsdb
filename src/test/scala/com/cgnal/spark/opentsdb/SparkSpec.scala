@@ -173,7 +173,17 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
       val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
-      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("key", StringType, nullable = false), StructField("value", FloatType, false))))
+      df.schema must be(
+        StructType(
+          Array(
+            StructField("timestamp", TimestampType, false),
+            StructField("key", StringType, nullable = false),
+            StructField("value", FloatType, false),
+            StructField("metricid", BinaryType, nullable = false),
+            StructField("kvids", DataTypes.createMapType(BinaryType, BinaryType), nullable = false)
+          )
+        )
+      )
 
       val result = df.collect()
 
@@ -208,7 +218,17 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
       val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
-      df.schema must be(StructType(Array(StructField("timestamp", TimestampType, false), StructField("key", StringType, nullable = false), StructField("value", FloatType, false))))
+      df.schema must be(
+        StructType(
+          Array(
+            StructField("timestamp", TimestampType, false),
+            StructField("key", StringType, nullable = false),
+            StructField("value", FloatType, false),
+            StructField("metricid", BinaryType, nullable = false),
+            StructField("kvids", DataTypes.createMapType(BinaryType, BinaryType), nullable = false)
+          )
+        )
+      )
 
       val result = df.collect()
 

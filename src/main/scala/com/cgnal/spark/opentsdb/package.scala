@@ -16,7 +16,6 @@
 
 package com.cgnal.spark
 
-import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
@@ -84,7 +83,7 @@ package object opentsdb {
       val configuration: Configuration = hbaseContext.broadcastedConf.value.value
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
-
+      //TODO this code is meant to work under kerberos, it's not working yet
       //      val authenticationType = configuration.get("hbase.security.authentication")
       //      val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
       val config = new Config(false)
