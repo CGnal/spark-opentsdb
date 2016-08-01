@@ -16,14 +16,17 @@
 
 package com.cgnal.spark
 
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.spark.HBaseContext
 import org.hbase.async.HBaseClient
 import shapeless.{ :+:, CNil, Coproduct }
 
@@ -69,28 +72,51 @@ package object opentsdb {
     })
   }
 
-  private[opentsdb] object TSDBClientManager {
+  object TSDBClientManager {
 
-    var quorum: String = _
-
-    var port: String = _
+    var hbaseContext: HBaseContext = _
 
     var tsdbTable: String = _
 
     var tsdbUidTable: String = _
 
     lazy val tsdb: TSDB = {
-      val hbaseAsyncClient = new HBaseClient(s"$quorum:$port", "/hbase")
+      val configuration: Configuration = hbaseContext.broadcastedConf.value.value
+      val quorum = configuration.get("hbase.zookeeper.quorum")
+      val port = configuration.get("hbase.zookeeper.property.clientPort")
+
+      //      val authenticationType = configuration.get("hbase.security.authentication")
+      //      val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
       config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      new TSDB(hbaseAsyncClient, config)
+      /*
+      if (authenticationType == "kerberos") {
+        configuration.set("hadoop.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
+        asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
+        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
+        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
+        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "Client")
+        asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
+      }
+      val resource = Thread.currentThread.getContextClassLoader.getResource("hbase-site.xml")
+      if (resource != null) {
+        val dir = new File(resource.getPath).getParent
+        val path = s"$dir/jaas.conf"
+        System.setProperty("java.security.auth.login.config", path)
+      }
+      val hbaseClient = new HBaseClient(asyncConfig)
+      new TSDB(hbaseClient, config)
+      */
+      val hBaseClient = new HBaseClient(s"$quorum:$port")
+      new TSDB(hBaseClient, config)
     }
 
-    def apply(quorum: String, port: String, tsdbTable: String, tsdbUidTable: String): Unit = {
-      this.quorum = quorum
-      this.port = port
+    def apply(hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
+      this.hbaseContext = hbaseContext
       this.tsdbTable = tsdbTable
       this.tsdbUidTable = tsdbUidTable
     }

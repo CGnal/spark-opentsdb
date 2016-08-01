@@ -19,9 +19,6 @@ package net.opentsdb.tools
 import net.opentsdb.core.TSDB
 import org.hbase.async.HBaseClient
 
-/**
- * Created by dgreco on 08/07/16.
- */
 object FileImporter {
   def importFile(
     hbaseClient: HBaseClient,

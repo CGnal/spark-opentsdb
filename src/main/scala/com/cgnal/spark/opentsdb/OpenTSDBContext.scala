@@ -195,22 +195,16 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
   }
 
   def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
-    val hbaseConfig = this.hbaseContext.config
-    val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
-    val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     timeseries.foreachPartition(it => {
-      TSDBClientManager(quorum = quorum, port = port, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       writeFunc(it, TSDBClientManager.tsdb)
     })
   }
 
   def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
-    val hbaseConfig = this.hbaseContext.config
-    val quorum = hbaseConfig.get("hbase.zookeeper.quorum")
-    val port = hbaseConfig.get("hbase.zookeeper.property.clientPort")
     dstream.foreachRDD { timeseries =>
       timeseries.foreachPartition { it =>
-        TSDBClientManager(quorum = quorum, port = port, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+        TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         writeFunc(it, TSDBClientManager.tsdb)
       }
     }
