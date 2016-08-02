@@ -130,11 +130,9 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
     val (mids, kids, vids) = if (metricsUids.isEmpty) {
       val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-      tsdbUID.cache()
       val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
       val kids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
       val vids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
-      tsdbUID.unpersist()
       (mids, kids, vids)
     } else
       (metricsUids.get, keyIds.get, valuesId.get)
@@ -144,16 +142,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     val bvids = sqlContext.sparkContext.broadcast(vids)
 
     val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy).mapPartitions(iterator => {
-      val mids = bmids.value
-      val kids = bkids.value
-      val vids = bvids.value
       iterator.map(row => Row(
         row.get(0),
-        mids(row.getAs[Array[Byte]](1).mkString),
+        bmids.value(row.getAs[Array[Byte]](1).mkString),
         row.get(2),
-        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (kids(p._1.mkString), vids(p._2.mkString))): Map[String, String]
+        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (bkids.value(p._1.mkString), bvids.value(p._2.mkString))): Map[String, String]
       ))
-    }, true)
+    }, preservesPartitioning = true)
 
     sqlContext.createDataFrame(rowRDD, schema)
   }
