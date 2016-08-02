@@ -130,9 +130,11 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
     val (mids, kids, vids) = if (metricsUids.isEmpty) {
       val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+      tsdbUID.cache()
       val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
       val kids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
       val vids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+      tsdbUID.unpersist()
       (mids, kids, vids)
     } else
       (metricsUids.get, keyIds.get, valuesId.get)
