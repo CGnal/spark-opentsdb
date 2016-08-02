@@ -17,11 +17,9 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
-import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.TimeZone
 
-import com.cloudera.sparkts.MillisecondFrequency
 import org.apache.spark.sql.types._
 
 import scala.collection.JavaConversions._
@@ -119,46 +117,46 @@ class SparkSpec extends SparkBaseSpec {
       result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](2))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
     }
   }
+  /*
+"Spark" must {
+  "load timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
-  "Spark" must {
-    "load timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
-
-      for (i <- 0 until 1000) {
-        tsdb.addPoint("metric1", i.toLong, (i - 10).toFloat, Map("key1" -> "value1"))
-        tsdb.addPoint("metric2", i.toLong, (i - 20).toFloat, Map("key1" -> "value1"))
-        tsdb.addPoint("metric3", i.toLong, (i - 30).toFloat, Map("key1" -> "value1"))
-        tsdb.addPoint("metric4", i.toLong, (i - 40).toFloat, Map("key1" -> "value1"))
-        tsdb.addPoint("metric5", i.toLong, (i - 50).toFloat, Map("key1" -> "value1"))
-      }
-
-      val startDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:00.000Z"))
-      val endDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:01.00Z"))
-      val simpleDateFormat = new SimpleDateFormat("yyyy-MM-ss mm-ss-SSS")
-      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-      val ts = openTSDBContext.loadTimeSeriesRDD(
-        sqlContext,
-        simpleDateFormat.format(startDate),
-        simpleDateFormat.format(endDate),
-        new MillisecondFrequency(1),
-        List(
-          "metric1" -> Map("key1" -> "value1"),
-          "metric2" -> Map("key1" -> "value1"),
-          "metric3" -> Map("key1" -> "value1"),
-          "metric4" -> Map("key1" -> "value1"),
-          "metric5" -> Map("key1" -> "value1")
-        ),
-        "yyyy-MM-ss mm-ss-SSS"
-      )
-
-      ts.findSeries("metric1").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
-      ts.findSeries("metric2").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
-      ts.findSeries("metric3").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
-      ts.findSeries("metric4").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
-      ts.findSeries("metric5").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
-
+    for (i <- 0 until 1000) {
+      tsdb.addPoint("metric1", i.toLong, (i - 10).toFloat, Map("key1" -> "value1"))
+      tsdb.addPoint("metric2", i.toLong, (i - 20).toFloat, Map("key1" -> "value1"))
+      tsdb.addPoint("metric3", i.toLong, (i - 30).toFloat, Map("key1" -> "value1"))
+      tsdb.addPoint("metric4", i.toLong, (i - 40).toFloat, Map("key1" -> "value1"))
+      tsdb.addPoint("metric5", i.toLong, (i - 50).toFloat, Map("key1" -> "value1"))
     }
+
+    val startDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:00.000Z"))
+    val endDate = Timestamp.from(Instant.parse(s"1970-01-01T00:00:01.00Z"))
+    val simpleDateFormat = new SimpleDateFormat("yyyy-MM-ss mm-ss-SSS")
+    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+
+    val ts = openTSDBContext.loadTimeSeriesRDD(
+      sqlContext,
+      simpleDateFormat.format(startDate),
+      simpleDateFormat.format(endDate),
+      new MillisecondFrequency(1),
+      List(
+        "metric1" -> Map("key1" -> "value1"),
+        "metric2" -> Map("key1" -> "value1"),
+        "metric3" -> Map("key1" -> "value1"),
+        "metric4" -> Map("key1" -> "value1"),
+        "metric5" -> Map("key1" -> "value1")
+      ),
+      "yyyy-MM-ss mm-ss-SSS"
+    )
+
+    ts.findSeries("metric1").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+    ts.findSeries("metric2").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+    ts.findSeries("metric3").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+    ts.findSeries("metric4").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+    ts.findSeries("metric5").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
+
   }
+} */
 
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB correctly" in {
@@ -179,8 +177,7 @@ class SparkSpec extends SparkBaseSpec {
             StructField("timestamp", TimestampType, false),
             StructField("key", StringType, nullable = false),
             StructField("value", FloatType, false),
-            StructField("metricid", BinaryType, nullable = false),
-            StructField("kvids", DataTypes.createMapType(BinaryType, BinaryType), nullable = false)
+            StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )
       )
@@ -224,8 +221,7 @@ class SparkSpec extends SparkBaseSpec {
             StructField("timestamp", TimestampType, false),
             StructField("key", StringType, nullable = false),
             StructField("value", FloatType, false),
-            StructField("metricid", BinaryType, nullable = false),
-            StructField("kvids", DataTypes.createMapType(BinaryType, BinaryType), nullable = false)
+            StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )
       )

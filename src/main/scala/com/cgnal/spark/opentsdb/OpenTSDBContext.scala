@@ -25,7 +25,7 @@ import java.util.TimeZone
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{ Connection, Get, Result }
+import org.apache.hadoop.hbase.client.{ Connection, Result, Scan }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.util.Bytes
@@ -108,9 +108,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     startdate: Option[String] = None,
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
-    conversionStrategy: ConversionStrategy = ConvertToDouble
+    conversionStrategy: ConversionStrategy = ConvertToDouble,
+    metricsUids: Option[Map[String, String]] = None,
+    keyIds: Option[Map[String, String]] = None,
+    valuesId: Option[Map[String, String]] = None
   ): DataFrame = {
     assert(conversionStrategy != NoConversion) //TODO better error handling
+    assert(metricsUids.isDefined && keyIds.isDefined && valuesId.isDefined || metricsUids.isEmpty && keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
     val schema = StructType(
       Array(
         StructField("timestamp", TimestampType, nullable = false),
@@ -120,12 +124,34 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
           case ConvertToDouble => StructField("value", DoubleType, nullable = false)
           case NoConversion => throw new Exception("") //TODO better error handling
         },
-        StructField("metricid", BinaryType, nullable = false),
-        StructField("kvids", DataTypes.createMapType(BinaryType, BinaryType), nullable = false)
+        StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
       )
     )
 
-    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy)
+    val (mids, kids, vids) = if (metricsUids.isEmpty) {
+      val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+      val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+      val kids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+      val vids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+      (mids, kids, vids)
+    } else
+      (metricsUids.get, keyIds.get, valuesId.get)
+
+    val bmids = sqlContext.sparkContext.broadcast(mids)
+    val bkids = sqlContext.sparkContext.broadcast(kids)
+    val bvids = sqlContext.sparkContext.broadcast(vids)
+
+    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy).mapPartitions(iterator => {
+      val mids = bmids.value
+      val kids = bkids.value
+      val vids = bvids.value
+      iterator.map(row => Row(
+        row.get(0),
+        mids(row.getAs[Array[Byte]](1).mkString),
+        row.get(2),
+        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (kids(p._1.mkString), vids(p._2.mkString))).asInstanceOf[Map[String, String]]
+      ))
+    }, true)
 
     sqlContext.createDataFrame(rowRDD, schema)
   }
@@ -141,13 +167,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-    val metricsUID = tsdbUID.map(l => l._2.getValue("id".getBytes(), "metrics".getBytes())).filter(_ != null).collect
+    val metricsUID: Array[Array[Byte]] = tsdbUID.map(l => l._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
     else {
       (
-        tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagk".getBytes()))).filter(_._2 != null).collect.toMap,
-        tsdbUID.map(l => (new String(l._1.copyBytes()), l._2.getValue("id".getBytes(), "tagv".getBytes()))).filter(_._2 != null).collect.toMap
+        tsdbUID.map(l => (new String(l._1.copyBytes), l._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
+        tsdbUID.map(l => (new String(l._1.copyBytes), l._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
       )
     }
     if (metricsUID.length == 0)
@@ -164,17 +190,12 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
     val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
     val ts0 = hbaseContext.mapPartitions(tsdb, (iterator: Iterator[(ImmutableBytesWritable, Result)], conn: Connection) => {
-      val table = conn.getTable(TableName.valueOf(tsdbUidTable))
       iterator.map {
         kv =>
           val keyBytes = kv._1.copyBytes()
           val chunks = util.Arrays.copyOfRange(keyBytes, metricWidth + 4, keyBytes.length).grouped(tagkWidth + tagvWidth)
           val kvids = chunks.map(chunk => (chunk.take(tagkWidth.toInt), chunk.drop(tagkWidth.toInt))).toMap
           val metricid = keyBytes.take(metricWidth.toInt)
-          val get = new Get(metricid)
-          get.addColumn("id".getBytes, "metrics".getBytes)
-          //val res = table.get(get)
-          //println(Bytes.toString(res.getValue("id".getBytes, "metrics".getBytes)))
           (util.Arrays.copyOfRange(keyBytes, 3, 7), kv._2.getFamilyMap("t".getBytes()), metricid, kvids)
       }
     }).asInstanceOf[RDD[(Array[Byte], util.NavigableMap[Array[Byte], Array[Byte]], Array[Byte], Map[Array[Byte], Array[Byte]])]]
@@ -200,15 +221,15 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
                 }
               }
 
-              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x), kv._3, kv._4))
+              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
 
-              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x), kv._3, kv._4))
+              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
 
-              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x), kv._3, kv._4))
+              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
 
-              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x), kv._3, kv._4))
+              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
 
-              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), metricName, convert(x), kv._3, kv._4))
+              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
             }
             dv._2 map ExtractValue
           })
