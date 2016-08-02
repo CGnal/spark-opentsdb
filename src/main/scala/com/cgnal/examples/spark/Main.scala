@@ -21,6 +21,7 @@ import java.io.File
 import com.cgnal.spark.opentsdb.OpenTSDBContext
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.spark.HBaseContext
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
 object Main extends App {
@@ -72,9 +73,9 @@ object Main extends App {
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
   val openTSDBContext = new OpenTSDBContext(hbaseContext)
 
-  val ts = openTSDBContext.load("open", Map("symbol" -> "AAPL"), Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
+  val df = openTSDBContext.loadDataFrame(new SQLContext(sparkContext), "open", Map("symbol" -> "AAPL"), Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
 
-  val result = ts.collect()
+  val result = df.collect()
 
   result.foreach(println(_))
 

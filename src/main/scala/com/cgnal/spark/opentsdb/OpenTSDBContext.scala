@@ -109,46 +109,68 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = ConvertToDouble,
-    metricsUids: Option[Map[String, String]] = None,
     keyIds: Option[Map[String, String]] = None,
-    valuesId: Option[Map[String, String]] = None
+    valuesId: Option[Map[String, String]] = None,
+    full: Boolean = true
   ): DataFrame = {
     assert(conversionStrategy != NoConversion) //TODO better error handling
-    assert(metricsUids.isDefined && keyIds.isDefined && valuesId.isDefined || metricsUids.isEmpty && keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
-    val schema = StructType(
-      Array(
-        StructField("timestamp", TimestampType, nullable = false),
-        StructField("key", StringType, nullable = false),
-        conversionStrategy match {
-          case ConvertToFloat => StructField("value", FloatType, nullable = false)
-          case ConvertToDouble => StructField("value", DoubleType, nullable = false)
-          case NoConversion => throw new Exception("") //TODO better error handling
-        },
-        StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
+    assert(keyIds.isDefined && valuesId.isDefined || keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
+    val schema = if (full)
+      StructType(
+        Array(
+          StructField("timestamp", TimestampType, nullable = false),
+          StructField("key", StringType, nullable = false),
+          conversionStrategy match {
+            case ConvertToFloat => StructField("value", FloatType, nullable = false)
+            case ConvertToDouble => StructField("value", DoubleType, nullable = false)
+            case NoConversion => throw new Exception("") //TODO better error handling
+          },
+          StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
+        )
       )
-    )
+    else
+      StructType(
+        Array(
+          StructField("timestamp", TimestampType, nullable = false),
+          StructField("key", StringType, nullable = false),
+          conversionStrategy match {
+            case ConvertToFloat => StructField("value", FloatType, nullable = false)
+            case ConvertToDouble => StructField("value", DoubleType, nullable = false)
+            case NoConversion => throw new Exception("") //TODO better error handling
+          }
+        )
+      )
 
-    val (mids, kids, vids) = if (metricsUids.isEmpty) {
-      val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-      val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
-      val kids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
-      val vids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
-      (mids, kids, vids)
+    val rowRDD = if (full) {
+      val (kids, vids) = if (keyIds.isEmpty) {
+        val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+        val kids = tsdbUID.map(p => (p._1.copyBytes, p._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+        val vids = tsdbUID.map(p => (p._1.copyBytes, p._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
+        (kids, vids)
+      } else
+        (keyIds.get, valuesId.get)
+
+      val bkids = sqlContext.sparkContext.broadcast(kids)
+      val bvids = sqlContext.sparkContext.broadcast(vids)
+
+      load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).map {
+        row =>
+          Row(
+            row.get(0),
+            metricName,
+            row.get(2),
+            row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (bkids.value(p._1.mkString), bvids.value(p._2.mkString))): Map[String, String]
+          )
+      }
     } else
-      (metricsUids.get, keyIds.get, valuesId.get)
-
-    val bmids = sqlContext.sparkContext.broadcast(mids)
-    val bkids = sqlContext.sparkContext.broadcast(kids)
-    val bvids = sqlContext.sparkContext.broadcast(vids)
-
-    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy).mapPartitions(iterator => {
-      iterator.map(row => Row(
-        row.get(0),
-        bmids.value(row.getAs[Array[Byte]](1).mkString),
-        row.get(2),
-        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (bkids.value(p._1.mkString), bvids.value(p._2.mkString))): Map[String, String]
-      ))
-    }, preservesPartitioning = true)
+      load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).map {
+        row =>
+          Row(
+            row.get(0),
+            metricName,
+            row.get(1)
+          )
+      }
 
     sqlContext.createDataFrame(rowRDD, schema)
   }
@@ -159,18 +181,19 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     startdate: Option[String] = None,
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
-    conversionStrategy: ConversionStrategy = NoConversion
+    conversionStrategy: ConversionStrategy = NoConversion,
+    full: Boolean = true
   ): RDD[Row] = {
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-    val metricsUID: Array[Array[Byte]] = tsdbUID.map(l => l._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
+    val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
     else {
       (
-        tsdbUID.map(l => (new String(l._1.copyBytes), l._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
-        tsdbUID.map(l => (new String(l._1.copyBytes), l._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
       )
     }
     if (metricsUID.length == 0)
@@ -218,15 +241,20 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
                 }
               }
 
-              implicit def caseByte = at[Byte](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
+              def addRow[T <: AnyVal](x: T) = if (full)
+                rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4)
+              else
+                rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x))
 
-              implicit def caseInt = at[Int](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
+              implicit def caseByte = at[Byte](addRow)
 
-              implicit def caseLong = at[Long](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
+              implicit def caseInt = at[Int](addRow)
 
-              implicit def caseFloat = at[Float](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
+              implicit def caseLong = at[Long](addRow)
 
-              implicit def caseDouble = at[Double](x => rows += Row(new Timestamp(basetime * 1000 + dv._1), kv._3, convert(x), kv._4))
+              implicit def caseFloat = at[Float](addRow)
+
+              implicit def caseDouble = at[Double](addRow)
             }
             dv._2 map ExtractValue
           })
