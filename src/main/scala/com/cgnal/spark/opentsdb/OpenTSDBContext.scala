@@ -149,7 +149,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
         row.get(0),
         mids(row.getAs[Array[Byte]](1).mkString),
         row.get(2),
-        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (kids(p._1.mkString), vids(p._2.mkString))).asInstanceOf[Map[String, String]]
+        row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (kids(p._1.mkString), vids(p._2.mkString))): Map[String, String]
       ))
     }, true)
 
