@@ -174,10 +174,10 @@ class SparkSpec extends SparkBaseSpec {
       df.schema must be(
         StructType(
           Array(
-            StructField("timestamp", TimestampType, false),
-            StructField("key", StringType, nullable = false),
-            StructField("value", FloatType, false),
-            StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
+            StructField("timestamp", TimestampType, nullable = false),
+            StructField("metric", StringType, nullable = false),
+            StructField("value", FloatType, nullable = false),
+            StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )
       )
@@ -218,10 +218,10 @@ class SparkSpec extends SparkBaseSpec {
       df.schema must be(
         StructType(
           Array(
-            StructField("timestamp", TimestampType, false),
-            StructField("key", StringType, nullable = false),
-            StructField("value", FloatType, false),
-            StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
+            StructField("timestamp", TimestampType, nullable = false),
+            StructField("metric", StringType, nullable = false),
+            StructField("value", FloatType, nullable = false),
+            StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )
       )

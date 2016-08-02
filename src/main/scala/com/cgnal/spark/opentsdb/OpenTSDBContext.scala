@@ -25,7 +25,7 @@ import java.util.TimeZone
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{ Connection, Result, Scan }
+import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.util.Bytes
@@ -119,20 +119,20 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       StructType(
         Array(
           StructField("timestamp", TimestampType, nullable = false),
-          StructField("key", StringType, nullable = false),
+          StructField("metric", StringType, nullable = false),
           conversionStrategy match {
             case ConvertToFloat => StructField("value", FloatType, nullable = false)
             case ConvertToDouble => StructField("value", DoubleType, nullable = false)
             case NoConversion => throw new Exception("") //TODO better error handling
           },
-          StructField("kvids", DataTypes.createMapType(StringType, StringType), nullable = false)
+          StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
         )
       )
     else
       StructType(
         Array(
           StructField("timestamp", TimestampType, nullable = false),
-          StructField("key", StringType, nullable = false),
+          StructField("metric", StringType, nullable = false),
           conversionStrategy match {
             case ConvertToFloat => StructField("value", FloatType, nullable = false)
             case ConvertToDouble => StructField("value", DoubleType, nullable = false)
@@ -209,16 +209,16 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     )
 
     val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-    val ts0 = hbaseContext.mapPartitions(tsdb, (iterator: Iterator[(ImmutableBytesWritable, Result)], conn: Connection) => {
-      iterator.map {
-        kv =>
-          val keyBytes = kv._1.copyBytes()
-          val chunks = util.Arrays.copyOfRange(keyBytes, metricWidth + 4, keyBytes.length).grouped(tagkWidth + tagvWidth)
-          val kvids = chunks.map(chunk => (chunk.take(tagkWidth.toInt), chunk.drop(tagkWidth.toInt))).toMap
-          val metricid = keyBytes.take(metricWidth.toInt)
-          (util.Arrays.copyOfRange(keyBytes, 3, 7), kv._2.getFamilyMap("t".getBytes()), metricid, kvids)
-      }
-    }).asInstanceOf[RDD[(Array[Byte], util.NavigableMap[Array[Byte], Array[Byte]], Array[Byte], Map[Array[Byte], Array[Byte]])]]
+
+    val ts0 = tsdb.map {
+      kv =>
+        val keyBytes = kv._1.copyBytes()
+        val chunks = util.Arrays.copyOfRange(keyBytes, metricWidth + 4, keyBytes.length).grouped(tagkWidth + tagvWidth)
+        val kvids = chunks.map(chunk => (chunk.take(tagkWidth.toInt), chunk.drop(tagkWidth.toInt))).toMap
+        val metricid = keyBytes.take(metricWidth.toInt)
+        (util.Arrays.copyOfRange(keyBytes, 3, 7), kv._2.getFamilyMap("t".getBytes()), metricid, kvids)
+    }
+
     val ts1: RDD[Row] = ts0.map(
       kv => {
         val rows = new ArrayBuffer[Row]
