@@ -164,7 +164,7 @@ class SparkSpec extends SparkBaseSpec {
       for (i <- 0 until values1.length) {
         val diff = Math.abs(values1(i) - values2(i))
         println(s"$i ${values1(i)} ${values2(i)} $diff")
-        diff < 0.000001 must be(true)
+        diff < 0.00001 must be(true)
       }
     }
   }
