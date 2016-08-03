@@ -34,9 +34,16 @@ import scala.collection.mutable.ArrayBuffer
 
 package object opentsdb {
 
-  type Value = Byte :+: Int :+: Long :+: Float :+: Double :+: CNil
+  type Value = Byte :+: Short :+: Int :+: Long :+: Float :+: Double :+: CNil
 
   implicit val writeForByte: (Iterator[(String, Long, Byte, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+    import collection.JavaConversions._
+    it.foreach(record => {
+      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    })
+  }
+
+  implicit val writeForShort: (Iterator[(String, Long, Short, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
     it.foreach(record => {
       tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
@@ -142,7 +149,7 @@ package object opentsdb {
     val name = if (tagKV.nonEmpty)
       String.format("^%s.*%s.*$", bytes2hex(metricsUID.last, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
     else
-      String.format("^%s.*$", bytes2hex(metricsUID.last, "\\x"))
+      String.format("^%s.+$", bytes2hex(metricsUID.last, "\\x"))
 
     val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
@@ -160,14 +167,19 @@ package object opentsdb {
     val endDateBuffer = ByteBuffer.allocate(4)
     endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
 
-    scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-    scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+    if (tagKV.nonEmpty) {
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+    } else {
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+    }
     scan
   }
 
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
     val scan = new Scan()
-    val name: String = String.format("^%s$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
+    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
     val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
     scan.setFilter(rowFilter)
@@ -230,6 +242,8 @@ package object opentsdb {
         (valueSize: @switch) match {
           case 1 =>
             Coproduct[Value](valueBytes(0))
+          case 2 =>
+            Coproduct[Value](ByteBuffer.wrap(valueBytes).getShort().toInt)
           case 4 =>
             Coproduct[Value](ByteBuffer.wrap(valueBytes).getInt())
           case 8 =>

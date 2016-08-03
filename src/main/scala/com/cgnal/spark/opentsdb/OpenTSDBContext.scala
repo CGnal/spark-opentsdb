@@ -81,7 +81,8 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       Some(startdate),
       Some(enddate),
       dateFormat,
-      ConvertToDouble
+      ConvertToDouble,
+      full = false
     ))
 
     val initDF = dfs.headOption.get
@@ -96,7 +97,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       index,
       observations,
       "timestamp",
-      "key",
+      "metric",
       "value"
     )
   }
@@ -109,12 +110,13 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = ConvertToDouble,
+    metricsUids: Option[Map[String, String]] = None,
     keyIds: Option[Map[String, String]] = None,
     valuesId: Option[Map[String, String]] = None,
     full: Boolean = true
   ): DataFrame = {
     assert(conversionStrategy != NoConversion) //TODO better error handling
-    assert(keyIds.isDefined && valuesId.isDefined || keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
+    assert(metricsUids.isDefined && keyIds.isDefined && valuesId.isDefined || metricsUids.isEmpty && keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
     val schema = if (full)
       StructType(
         Array(
@@ -142,14 +144,16 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       )
 
     val rowRDD = if (full) {
-      val (kids, vids) = if (keyIds.isEmpty) {
+      val (mids, kids, vids) = if (keyIds.isEmpty) {
         val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+        val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
         val kids = tsdbUID.map(p => (p._1.copyBytes, p._2.getValue("id".getBytes, "tagk".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
         val vids = tsdbUID.map(p => (p._1.copyBytes, p._2.getValue("id".getBytes, "tagv".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
-        (kids, vids)
+        (mids, kids, vids)
       } else
-        (keyIds.get, valuesId.get)
+        (metricsUids.get, keyIds.get, valuesId.get)
 
+      val bmids = sqlContext.sparkContext.broadcast(mids)
       val bkids = sqlContext.sparkContext.broadcast(kids)
       val bvids = sqlContext.sparkContext.broadcast(vids)
 
@@ -157,7 +161,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
         row =>
           Row(
             row.get(0),
-            metricName,
+            bmids.value(row.getAs[Array[Byte]](1).mkString),
             row.get(2),
             row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (bkids.value(p._1.mkString), bvids.value(p._2.mkString))): Map[String, String]
           )
@@ -247,6 +251,8 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
                 rows += Row(new Timestamp(basetime * 1000 + dv._1), convert(x))
 
               implicit def caseByte = at[Byte](addRow)
+
+              implicit def caseShort = at[Short](addRow)
 
               implicit def caseInt = at[Int](addRow)
 
