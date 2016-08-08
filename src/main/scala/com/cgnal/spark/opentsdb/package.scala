@@ -16,6 +16,7 @@
 
 package com.cgnal.spark
 
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
@@ -91,17 +92,17 @@ package object opentsdb {
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
       //TODO this code is meant to work under kerberos, it's not working yet
-      //      val authenticationType = configuration.get("hbase.security.authentication")
-      //      val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
+      val authenticationType = configuration.get("hbase.security.authentication")
+      val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
       config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      /*
+      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
+      asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
+
       if (authenticationType == "kerberos") {
         configuration.set("hadoop.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
-        asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
         asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
         asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
         asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
@@ -116,9 +117,6 @@ package object opentsdb {
       }
       val hbaseClient = new HBaseClient(asyncConfig)
       new TSDB(hbaseClient, config)
-      */
-      val hBaseClient = new HBaseClient(s"$quorum:$port")
-      new TSDB(hBaseClient, config)
     }
 
     def apply(hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
