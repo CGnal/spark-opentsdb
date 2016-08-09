@@ -115,15 +115,7 @@ val assemblyDependencies = Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
-  "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
-  "net.opentsdb" % "opentsdb" % openTSDBVersion % "compile"
-    exclude("net.opentsdb", "opentsdb_gwt_theme")
-    exclude("com.google.guava", "guava")
-    exclude("ch.qos.logback", "*")
-    exclude("com.google.gwt", "gwt-user")
-    exclude("org.jboss.netty", "*")
-    exclude("log4j", "*")
-    exclude("org.slf4j", "*")
+  "com.chuusai" %% "shapeless" % shapelessVersion % "compile"
 )
 
 val hadoopClientExcludes =
@@ -183,7 +175,15 @@ lazy val root = (project in file(".")).
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "it,test"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests")
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests"),
+      "net.opentsdb" % "opentsdb" % openTSDBVersion % "it,test"
+        exclude("net.opentsdb", "opentsdb_gwt_theme")
+        exclude("com.google.guava", "guava")
+        exclude("ch.qos.logback", "*")
+        exclude("com.google.gwt", "gwt-user")
+        exclude("org.jboss.netty", "*")
+        exclude("log4j", "*")
+        exclude("org.slf4j", "*")
     ),
     headers := Map(
       "sbt" -> Apache2_0("2016", "CGnal S.p.A."),

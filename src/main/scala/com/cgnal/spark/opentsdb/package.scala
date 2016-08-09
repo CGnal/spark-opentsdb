@@ -16,18 +16,12 @@
 
 package com.cgnal.spark
 
-import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
-import net.opentsdb.core.TSDB
-import net.opentsdb.utils.Config
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
-import org.apache.hadoop.hbase.spark.HBaseContext
-import org.hbase.async.HBaseClient
 import shapeless.{ :+:, CNil, Coproduct }
 
 import scala.annotation.switch
@@ -36,96 +30,6 @@ import scala.collection.mutable.ArrayBuffer
 package object opentsdb {
 
   type Value = Byte :+: Short :+: Int :+: Long :+: Float :+: Double :+: CNil
-
-  implicit val writeForByte: (Iterator[(String, Long, Byte, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
-    })
-  }
-
-  implicit val writeForShort: (Iterator[(String, Long, Short, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
-    })
-  }
-
-  implicit val writeForInt: (Iterator[(String, Long, Int, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
-    })
-  }
-
-  implicit val writeForLong: (Iterator[(String, Long, Long, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
-    })
-  }
-
-  implicit val writeForFloat: (Iterator[(String, Long, Float, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
-    })
-  }
-
-  implicit val writeForDouble: (Iterator[(String, Long, Double, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
-    })
-  }
-
-  object TSDBClientManager {
-
-    var hbaseContext: HBaseContext = _
-
-    var tsdbTable: String = _
-
-    var tsdbUidTable: String = _
-
-    lazy val tsdb: TSDB = {
-      val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-      val quorum = configuration.get("hbase.zookeeper.quorum")
-      val port = configuration.get("hbase.zookeeper.property.clientPort")
-      //TODO this code is meant to work under kerberos, it's not working yet
-      val authenticationType = configuration.get("hbase.security.authentication")
-      val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
-      asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-
-      if (authenticationType == "kerberos") {
-        configuration.set("hadoop.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
-        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
-        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "Client")
-        asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-      }
-      val resource = Thread.currentThread.getContextClassLoader.getResource("hbase-site.xml")
-      if (resource != null) {
-        val dir = new File(resource.getPath).getParent
-        val path = s"$dir/jaas.conf"
-        System.setProperty("java.security.auth.login.config", path)
-      }
-      val hbaseClient = new HBaseClient(asyncConfig)
-      new TSDB(hbaseClient, config)
-    }
-
-    def apply(hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
-      this.hbaseContext = hbaseContext
-      this.tsdbTable = tsdbTable
-      this.tsdbUidTable = tsdbUidTable
-    }
-
-  }
 
   private[opentsdb] def getMetricScan(
     tags: Map[String, String],

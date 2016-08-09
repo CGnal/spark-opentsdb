@@ -23,7 +23,6 @@ import java.util
 import java.util.TimeZone
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
-import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
@@ -32,7 +31,6 @@ import org.apache.hadoop.hbase.util.Bytes
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
-import org.apache.spark.streaming.dstream.DStream
 import shapeless.Poly1
 
 import scala.collection.mutable.ArrayBuffer
@@ -269,22 +267,6 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
       }
     ).flatMap(identity)
     ts1
-  }
-
-  def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
-    timeseries.foreachPartition(it => {
-      TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      writeFunc(it, TSDBClientManager.tsdb)
-    })
-  }
-
-  def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
-    dstream.foreachRDD { timeseries =>
-      timeseries.foreachPartition { it =>
-        TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-        writeFunc(it, TSDBClientManager.tsdb)
-      }
-    }
   }
 
 }

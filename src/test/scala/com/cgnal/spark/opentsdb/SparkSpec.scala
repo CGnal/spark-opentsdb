@@ -242,47 +242,4 @@ class SparkSpec extends SparkBaseSpec {
     }
   }
 
-  "Spark" must {
-    "save timeseries points from a Spark stream correctly" in {
-
-      val points = for {
-        i <- 0 until 10
-        ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
-        epoch = ts.getTime
-        point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
-      } yield point
-
-      val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
-
-      val stream = streamingContext.queueStream[(String, Long, Double, Map[String, String])](mutable.Queue(rdd))
-
-      openTSDBContext.streamWrite(stream)
-
-      streamingContext.start()
-
-      Thread.sleep(1000)
-
-      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
-
-      df.schema must be(
-        StructType(
-          Array(
-            StructField("timestamp", TimestampType, nullable = false),
-            StructField("metric", StringType, nullable = false),
-            StructField("value", FloatType, nullable = false),
-            StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
-          )
-        )
-      )
-
-      val result = df.collect()
-
-      result.length must be(10)
-
-      result.foreach(println(_))
-    }
-  }
-
 }
