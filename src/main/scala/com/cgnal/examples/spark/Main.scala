@@ -17,20 +17,32 @@
 package com.cgnal.examples.spark
 
 import java.io.File
+import java.sql.Timestamp
+import java.time.Instant
+import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.OpenTSDBContext
+import com.cgnal.spark.opentsdb.{ ConvertToFloat, OpenTSDBContext, _ }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
+/*
+spark-submit --executor-memory 1500M \
+  --driver-class-path /etc/hbase/conf \
+  --conf spark.executor.extraClassPath=/etc/hbase/conf \
+  --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/etc/hbase/conf/jaas.conf \
+  --master yarn --deploy-mode client \
+  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar
+ */
+
 object Main extends App {
 
-  val yarn = true
+  val yarn = false
 
-  val initialExecutors = 4
+  val initialExecutors = 1
 
-  val minExecutors = 4
+  val minExecutors = 1
 
   val conf = new SparkConf().setAppName("spark-cdh5-template-yarn")
 
@@ -70,17 +82,28 @@ object Main extends App {
   }
 
   val sparkContext = new SparkContext(conf)
+  val sqlContext = new SQLContext(sparkContext)
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
   val openTSDBContext = new OpenTSDBContext(hbaseContext)
 
-  val df = openTSDBContext.loadDataFrame(new SQLContext(sparkContext), "open", Map("symbol" -> "AAPL"), Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
+  val points = for {
+    i <- 0 until 10
+    ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
+    epoch = ts.getTime
+    point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+  } yield point
+
+  val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
+
+  openTSDBContext.write(rdd)
+
+  val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+  simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+  val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
   val result = df.collect()
 
   result.foreach(println(_))
 
-  println(result.length)
-
   sparkContext.stop()
-
 }

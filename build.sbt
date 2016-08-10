@@ -64,7 +64,8 @@ val shapelessVersion = "2.3.1"
 resolvers ++= Seq(
   Resolver.sonatypeRepo("releases"),
   Resolver.sonatypeRepo("snapshots"),
-  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
+  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/",
+  Resolver.mavenLocal
 )
 
 val sparkExcludes =
@@ -115,7 +116,20 @@ val assemblyDependencies = Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
-  "com.chuusai" %% "shapeless" % shapelessVersion % "compile"
+  "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
+  "net.opentsdb" % "opentsdb" % openTSDBVersion % "compile"
+    exclude("net.opentsdb", "opentsdb_gwt_theme")
+    exclude("com.google.guava", "guava")
+    exclude("ch.qos.logback", "*")
+    exclude("com.google.gwt", "gwt-user")
+    exclude("org.jboss.netty", "*")
+    exclude("log4j", "*")
+    exclude("org.slf4j", "*")
+    exclude("org.hbase", "asynchbase"),
+  "org.hbase" % "asynchbase-shaded" % "1.7.1"
+    exclude("log4j", "*")
+    exclude("org.slf4j", "*")
+    exclude("com.google.guava", "guava")
 )
 
 val hadoopClientExcludes =
