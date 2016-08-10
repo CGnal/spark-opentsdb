@@ -89,7 +89,7 @@ package object opentsdb {
   }
 
   //TODO: changes operations on binary strings to bits
-  private[opentsdb] def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
+  private[opentsdb] def processQuantifierOld(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
     //converting Byte Arrays to a Array of binary string
     val q = quantifier.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) })
     var i = 0
@@ -119,6 +119,40 @@ package object opentsdb {
       }
       out += ((value, isInteger, valueLength + 1))
     }
+    out.toArray
+  }
+
+  private[opentsdb] def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
+    val out = new ArrayBuffer[(Long, Boolean, Int)]
+    var i = 0
+
+    while (i < quantifier.length) {
+      var value: Long = -1
+      var isInteger = true
+      var valueLength = -1
+
+      //The first byte starts with 0XF (in binary '1111')
+      val isQuantifierSizeTypeSmall = ! ((quantifier(i) & 0xF0) == 0xF0)
+      if (isQuantifierSizeTypeSmall) {
+        value = ((quantifier(i) & 0xFF) * 0x10).toLong +
+          ((quantifier(i + 1) >>> 4) & 0x0F) //The 1st 12 bits represent the delta
+        isInteger = (quantifier(i + 1) & 0x08) != 0x08 //The 13th bit (00001000 = 0x08) represent the format of the value for the delta. 0=Integer, 1=Float
+        valueLength = quantifier(i + 1) & 0x07 //The last 3 bits (00000111 = 0x07) represents the length of the value
+
+        i = i + 2
+      } else {
+        value = ((quantifier(i) & 0x0F) * 0x40000).toLong +
+          ((quantifier(i + 1) & 0xFF) * 0x400).toLong +
+          ((quantifier(i + 2) & 0xFF) * 0x04).toLong +
+          ((quantifier(i + 3) >>> 6) & 0x03) //The first 4 bits represents the size, the next 22 bits hold the delta
+        isInteger = (quantifier(i + 3) & 0x08) != 0x08 //The 29th bit (00001000 = 0x08) represent the format of the value for the delta. 0=Integer, 1=Float
+        valueLength = quantifier(i + 3) & 0x07 //The last 3 bits (00000111 = 0x07) represents the length of the value
+
+        i = i + 4
+      }
+      out += ((value, isInteger, valueLength + 1))
+    }
+
     out.toArray
   }
 
