@@ -16,7 +16,6 @@
 
 package com.cgnal.spark
 
-import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
