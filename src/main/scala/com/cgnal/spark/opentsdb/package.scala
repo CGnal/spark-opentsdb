@@ -16,6 +16,7 @@
 
 package com.cgnal.spark
 
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
@@ -26,6 +27,8 @@ import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.spark.HBaseContext
+import org.hbase.async.HBaseClient
 import shapeless.{ :+:, CNil, Coproduct }
 
 import scala.annotation.switch
@@ -113,12 +116,6 @@ package object opentsdb {
         asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
         asyncConfig.overrideConfig("hbase.sasl.clientconfig", "Client")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-        val resource = Thread.currentThread.getContextClassLoader.getResource("hbase-site.xml")
-        if (resource != null) {
-          val dir = new File(resource.getPath).getParent
-          val path = s"$dir/jaas.conf"
-          System.setProperty("java.security.auth.login.config", path)
-        }
       }
       val hbaseClient = new HBaseClient(asyncConfig)
       new TSDB(hbaseClient, config)
