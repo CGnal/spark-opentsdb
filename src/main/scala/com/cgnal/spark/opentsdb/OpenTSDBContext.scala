@@ -16,6 +16,7 @@
 
 package com.cgnal.spark.opentsdb
 
+import java.io.File
 import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.time._
@@ -38,7 +39,7 @@ import shapeless.Poly1
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
-class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
   var tsdbTable = "tsdb"
 
@@ -50,8 +51,16 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
   var tagvWidth: Byte = 3
 
+  private var keyTabFile_ : String = ""
+
+  def keyTabFile = keyTabFile_
+
+  def keyTabFile_=(keyTabFile: String) = {
+    this.keyTabFile_ = new File(keyTabFile).getAbsolutePath
+    sqlContext.sparkContext.addFile(keyTabFile)
+  }
+
   def loadTimeSeriesRDD(
-    sqlContext: SQLContext,
     startdate: String,
     enddate: String,
     frequency: Frequency,
@@ -273,7 +282,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
 
   def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
-      TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager(keyTabFile_, hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       writeFunc(it, TSDBClientManager.tsdb)
     })
   }
@@ -281,7 +290,7 @@ class OpenTSDBContext(hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yy
   def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     dstream.foreachRDD { timeseries =>
       timeseries.foreachPartition { it =>
-        TSDBClientManager(hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+        TSDBClientManager(keyTabFile_, hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         writeFunc(it, TSDBClientManager.tsdb)
       }
     }

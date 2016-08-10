@@ -186,7 +186,6 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
       val ts = openTSDBContext.loadTimeSeriesRDD(
-        sqlContext,
         simpleDateFormat.format(startDate),
         simpleDateFormat.format(endDate),
         new MillisecondFrequency(1),

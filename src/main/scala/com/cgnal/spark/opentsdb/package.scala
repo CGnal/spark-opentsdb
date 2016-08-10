@@ -16,6 +16,7 @@
 
 package com.cgnal.spark
 
+import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.ByteBuffer
 import java.util.{ Calendar, TimeZone }
 
@@ -27,6 +28,7 @@ import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
+import org.apache.hadoop.security.UserGroupInformation
 import org.hbase.async.HBaseClient
 import shapeless.{ :+:, CNil, Coproduct }
 
@@ -83,9 +85,19 @@ package object opentsdb {
 
     var hbaseContext: HBaseContext = _
 
+    var keyTableFile: String = _
+
     var tsdbTable: String = _
 
     var tsdbUidTable: String = _
+
+    private def writeStringToFile(file: File, str: String): Unit = {
+      val bw = new BufferedWriter(new FileWriter(file))
+      bw.write(str)
+      bw.close()
+    }
+
+    def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
     lazy val tsdb: TSDB = {
       val configuration: Configuration = {
@@ -96,10 +108,30 @@ package object opentsdb {
         else
           configuration
       }
+      val authenticationType = configuration.get("hbase.security.authentication")
+      if (authenticationType == "kerberos") {
+        val currentUser = UserGroupInformation.getCurrentUser()
+        val keyTabFileName = new File(keyTableFile).getName
+        val keyTabFilePath = s"$getCurrentDirectory/$keyTabFileName"
+        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+        val jaasConf =
+          s"""
+             |
+            |AsynchbaseClient {
+             |  com.sun.security.auth.module.Krb5LoginModule required
+             |  useTicketCache=false
+             |  useKeyTab=true
+             |  keyTab="$keyTabFilePath"
+             |  principal="${currentUser.getUserName}"
+             |  storeKey=true;
+             |};
+          """.stripMargin
+        writeStringToFile(jaasFile, jaasConf)
+        System.setProperty("java.security.auth.login.config", jaasFile.getAbsolutePath)
+      }
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
       //TODO this code is meant to work under kerberos, it's not working yet
-      val authenticationType = configuration.get("hbase.security.authentication")
       val asyncConfig = new org.hbase.async.Config()
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
@@ -113,15 +145,16 @@ package object opentsdb {
         asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
         asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
         asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
-        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "Client")
+        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
       }
       val hbaseClient = new HBaseClient(asyncConfig)
       new TSDB(hbaseClient, config)
     }
 
-    def apply(hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
+    def apply(keyTableFile: String, hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
       this.hbaseContext = hbaseContext
+      this.keyTableFile = keyTableFile
       this.tsdbTable = tsdbTable
       this.tsdbUidTable = tsdbUidTable
     }

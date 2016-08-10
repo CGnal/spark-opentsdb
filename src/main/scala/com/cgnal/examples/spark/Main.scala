@@ -84,7 +84,9 @@ object Main extends App {
   val sparkContext = new SparkContext(conf)
   val sqlContext = new SQLContext(sparkContext)
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
-  val openTSDBContext = new OpenTSDBContext(hbaseContext)
+  val openTSDBContext = new OpenTSDBContext(sqlContext, hbaseContext)
+
+  openTSDBContext.keyTabFile = args(1)
 
   val points = for {
     i <- 0 until 10
@@ -104,6 +106,8 @@ object Main extends App {
   val result = df.collect()
 
   result.foreach(println(_))
+
+  Thread.sleep(100000)
 
   sparkContext.stop()
 }
