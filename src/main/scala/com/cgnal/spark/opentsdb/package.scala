@@ -16,9 +16,10 @@
 
 package com.cgnal.spark
 
-import java.io.{ BufferedWriter, File, FileWriter }
+import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.ByteBuffer
-import java.util.{ Calendar, TimeZone }
+import java.nio.file.{Files, Paths}
+import java.util.{Calendar, TimeZone}
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
@@ -26,11 +27,11 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.security.UserGroupInformation
+import org.apache.spark.broadcast.Broadcast
 import org.hbase.async.HBaseClient
-import shapeless.{ :+:, CNil, Coproduct }
+import shapeless.{:+:, CNil, Coproduct}
 
 import scala.annotation.switch
 import scala.collection.mutable.ArrayBuffer
@@ -83,9 +84,13 @@ package object opentsdb {
 
   object TSDBClientManager {
 
+    @transient lazy val log = org.apache.log4j.LogManager.getLogger(this.getClass.getName)
+
     var hbaseContext: HBaseContext = _
 
-    var keyTableFile: String = _
+    var keytab: Option[Broadcast[Array[Byte]]] = None
+
+    var principal: Option[String] = None
 
     var tsdbTable: String = _
 
@@ -110,9 +115,10 @@ package object opentsdb {
       }
       val authenticationType = configuration.get("hbase.security.authentication")
       if (authenticationType == "kerberos") {
-        val currentUser = UserGroupInformation.getCurrentUser()
-        val keyTabFileName = new File(keyTableFile).getName
-        val keyTabFilePath = s"$getCurrentDirectory/$keyTabFileName"
+        val keytabPath = s"$getCurrentDirectory/keytab"
+        val keytabFile = new File(keytabPath)
+        val byteArray = keytab.get.value
+        Files.write(Paths.get(keytabPath), byteArray)
         val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
         val jaasConf =
           s"""
@@ -121,17 +127,24 @@ package object opentsdb {
              |  com.sun.security.auth.module.Krb5LoginModule required
              |  useTicketCache=false
              |  useKeyTab=true
-             |  keyTab="$keyTabFilePath"
-             |  principal="${currentUser.getUserName}"
+             |  keyTab="$keytabPath"
+             |  principal="${principal.get}"
              |  storeKey=true;
              |};
           """.stripMargin
         writeStringToFile(jaasFile, jaasConf)
         System.setProperty("java.security.auth.login.config", jaasFile.getAbsolutePath)
+        log.info(s"Kerberos Principal: ${principal.get}")
+        log.info(s"KeyTab Path: $keytabPath")
+        log.info(s"JAAS File Path: $jaasFile")
+        log.info(
+          s"""JAAS File:
+              |$jaasConf
+           """.stripMargin
+        )
       }
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
-      //TODO this code is meant to work under kerberos, it's not working yet
       val asyncConfig = new org.hbase.async.Config()
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
@@ -152,9 +165,10 @@ package object opentsdb {
       new TSDB(hbaseClient, config)
     }
 
-    def apply(keyTableFile: String, hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
+    def apply(keytab: Option[Broadcast[Array[Byte]]], principal: Option[String], hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
+      this.keytab = keytab
+      this.principal = principal
       this.hbaseContext = hbaseContext
-      this.keyTableFile = keyTableFile
       this.tsdbTable = tsdbTable
       this.tsdbUidTable = tsdbUidTable
     }
@@ -162,14 +176,14 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
-    tags: Map[String, String],
-    metricsUID: Array[Array[Byte]],
-    tagKUIDs: Map[String, Array[Byte]],
-    tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String],
-    enddate: Option[String],
-    dateFormat: String
-  ) = {
+                                       tags: Map[String, String],
+                                       metricsUID: Array[Array[Byte]],
+                                       tagKUIDs: Map[String, Array[Byte]],
+                                       tagVUIDs: Map[String, Array[Byte]],
+                                       startdate: Option[String],
+                                       enddate: Option[String],
+                                       dateFormat: String
+                                     ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))

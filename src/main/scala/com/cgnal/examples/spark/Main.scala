@@ -86,7 +86,9 @@ object Main extends App {
   val hbaseContext = new HBaseContext(sparkContext, new Configuration())
   val openTSDBContext = new OpenTSDBContext(sqlContext, hbaseContext)
 
-  openTSDBContext.keyTabFile = args(1)
+  openTSDBContext.keytab = args(1)
+
+  openTSDBContext.principal = args(2)
 
   val points = for {
     i <- 0 until 10
