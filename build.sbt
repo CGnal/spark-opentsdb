@@ -62,10 +62,12 @@ val sparkTSVersion = "0.3.0"
 val shapelessVersion = "2.3.1"
 
 resolvers ++= Seq(
-  Resolver.sonatypeRepo("releases"),
+  Resolver.mavenLocal,
+  Resolver.sonatypeRepo("public"),
   Resolver.sonatypeRepo("snapshots"),
-  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/",
-  Resolver.mavenLocal
+  Resolver.typesafeRepo("releases"),
+  Resolver.typesafeIvyRepo("releases"),
+  "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
 )
 
 val sparkExcludes =
@@ -127,9 +129,6 @@ val assemblyDependencies = Seq(
     exclude("org.slf4j", "*")
     exclude("org.hbase", "asynchbase"),
   "org.hbase" % "asynchbase-shaded" % "1.7.1"
-    exclude("log4j", "*")
-    exclude("org.slf4j", "*")
-    exclude("com.google.guava", "guava")
 )
 
 val hadoopClientExcludes =

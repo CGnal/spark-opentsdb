@@ -28,12 +28,12 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
 /*
-spark-submit --executor-memory 1500M \
+spark-submit --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
   --conf spark.executor.extraClassPath=/etc/hbase/conf \
   --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/etc/hbase/conf/jaas.conf \
   --master yarn --deploy-mode client \
-  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar
+  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@VMCLUSTER
  */
 
 object Main extends App {
@@ -108,8 +108,6 @@ object Main extends App {
   val result = df.collect()
 
   result.foreach(println(_))
-
-  Thread.sleep(100000)
 
   sparkContext.stop()
 }

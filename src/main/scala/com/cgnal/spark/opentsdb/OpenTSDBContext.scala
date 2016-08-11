@@ -18,23 +18,23 @@ package com.cgnal.spark.opentsdb
 
 import java.io.File
 import java.nio.ByteBuffer
-import java.nio.file.{Files, Paths}
+import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
 import java.time._
 import java.util
 import java.util.TimeZone
 
-import com.cloudera.sparkts.{DateTimeIndex, Frequency, TimeSeriesRDD}
+import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{Result, Scan}
+import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
 import shapeless.Poly1
 
@@ -70,13 +70,13 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   def principal_=(principal: String) = principal_ = Some(principal)
 
   def loadTimeSeriesRDD(
-                         startdate: String,
-                         enddate: String,
-                         frequency: Frequency,
-                         metrics: List[(String, Map[String, String])],
-                         dateFormat: String = this.dateFormat,
-                         conversionStrategy: ConversionStrategy = ConvertToDouble
-                       ): TimeSeriesRDD[String] = {
+    startdate: String,
+    enddate: String,
+    frequency: Frequency,
+    metrics: List[(String, Map[String, String])],
+    dateFormat: String = this.dateFormat,
+    conversionStrategy: ConversionStrategy = ConvertToDouble
+  ): TimeSeriesRDD[String] = {
 
     val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
     simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
@@ -121,18 +121,18 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   }
 
   def loadDataFrame(
-                     sqlContext: SQLContext,
-                     metricName: String,
-                     tags: Map[String, String] = Map.empty[String, String],
-                     startdate: Option[String] = None,
-                     enddate: Option[String] = None,
-                     dateFormat: String = this.dateFormat,
-                     conversionStrategy: ConversionStrategy = ConvertToDouble,
-                     metricsUids: Option[Map[String, String]] = None,
-                     keyIds: Option[Map[String, String]] = None,
-                     valuesId: Option[Map[String, String]] = None,
-                     full: Boolean = true
-                   ): DataFrame = {
+    sqlContext: SQLContext,
+    metricName: String,
+    tags: Map[String, String] = Map.empty[String, String],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None,
+    dateFormat: String = this.dateFormat,
+    conversionStrategy: ConversionStrategy = ConvertToDouble,
+    metricsUids: Option[Map[String, String]] = None,
+    keyIds: Option[Map[String, String]] = None,
+    valuesId: Option[Map[String, String]] = None,
+    full: Boolean = true
+  ): DataFrame = {
     assert(conversionStrategy != NoConversion) //TODO better error handling
     assert(metricsUids.isDefined && keyIds.isDefined && valuesId.isDefined || metricsUids.isEmpty && keyIds.isEmpty && valuesId.isEmpty) //TODO better error handling
     val schema = if (full)
@@ -198,14 +198,14 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   }
 
   def load(
-            metricName: String,
-            tags: Map[String, String] = Map.empty[String, String],
-            startdate: Option[String] = None,
-            enddate: Option[String] = None,
-            dateFormat: String = this.dateFormat,
-            conversionStrategy: ConversionStrategy = NoConversion,
-            full: Boolean = true
-          ): RDD[Row] = {
+    metricName: String,
+    tags: Map[String, String] = Map.empty[String, String],
+    startdate: Option[String] = None,
+    enddate: Option[String] = None,
+    dateFormat: String = this.dateFormat,
+    conversionStrategy: ConversionStrategy = NoConversion,
+    full: Boolean = true
+  ): RDD[Row] = {
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
@@ -216,7 +216,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
       (
         tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
         tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
-        )
+      )
     }
     if (metricsUID.length == 0)
       throw new Exception(s"Metric not found: $metricName")
@@ -258,8 +258,8 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
               def convert[A <: AnyVal](x: A): AnyVal = {
                 conversionStrategy match {
                   case NoConversion => x
-                  case ConvertToFloat => x.asInstanceOf[ {def toFloat: Float}].toFloat
-                  case ConvertToDouble => x.asInstanceOf[ {def toDouble: Double}].toDouble
+                  case ConvertToFloat => x.asInstanceOf[{ def toFloat: Float }].toFloat
+                  case ConvertToDouble => x.asInstanceOf[{ def toDouble: Double }].toDouble
                 }
               }
 
