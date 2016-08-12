@@ -83,7 +83,6 @@ val sparkExcludes =
 val hbaseExcludes =
   (moduleID: ModuleID) => moduleID.
     exclude("org.slf4j", "slf4j-log4j12").
-    exclude("log4j", "log4j").
     exclude("org.apache.thrift", "thrift").
     exclude("org.jruby", "jruby-complete").
     exclude("org.slf4j", "slf4j-log4j12").
