@@ -64,9 +64,7 @@ val shapelessVersion = "2.3.1"
 resolvers ++= Seq(
   Resolver.mavenLocal,
   Resolver.sonatypeRepo("public"),
-  Resolver.sonatypeRepo("snapshots"),
   Resolver.typesafeRepo("releases"),
-  Resolver.typesafeIvyRepo("releases"),
   "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
 )
 
@@ -110,7 +108,6 @@ val hbaseExcludes =
     exclude("commons-beanutils", "commons-beanutils")
 
 val assemblyDependencies = Seq(
-  sparkExcludes("org.apache.spark" %% "spark-streaming-kafka" % sparkVersion % "compile"),
   sparkExcludes("org.apache.hbase" % "hbase-spark" % hbaseVersion % "compile"),
   sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
@@ -226,3 +223,10 @@ lazy val projectAssembly = (project in file("assembly")).
     Seq(
       (projectID in root).value.excludeAll(ExclusionRule(organization = "org.apache.spark")))
   })
+
+val buildShadedLibrary = taskKey[Unit]("Build the shaded library")
+
+buildShadedLibrary := Process("mvn" :: "install" :: Nil, new File("shaded_asynchbase")).!
+
+buildShadedLibrary <<= buildShadedLibrary dependsOn buildShadedLibrary
+compile in Compile <<= compile in Compile dependsOn buildShadedLibrary
