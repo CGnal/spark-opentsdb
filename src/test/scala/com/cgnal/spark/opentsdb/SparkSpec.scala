@@ -27,7 +27,7 @@ import net.opentsdb.tools.FileImporter
 import net.opentsdb.utils.Config
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.types._
-import org.hbase.async.HBaseClient
+import shaded.org.hbase.async.HBaseClient
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable

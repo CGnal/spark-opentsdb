@@ -17,7 +17,7 @@
 package net.opentsdb.tools
 
 import net.opentsdb.core.TSDB
-import org.hbase.async.HBaseClient
+import shaded.org.hbase.async.HBaseClient
 
 object FileImporter {
   def importFile(

@@ -1,7 +1,7 @@
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import sbt.{ExclusionRule, _}
 
-organization := "com.cgnal"
+organization := "com.cgnal.spark"
 
 name := "spark-opentsdb"
 
@@ -116,16 +116,7 @@ val assemblyDependencies = Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
   "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
-  "net.opentsdb" % "opentsdb" % openTSDBVersion % "compile"
-    exclude("net.opentsdb", "opentsdb_gwt_theme")
-    exclude("com.google.guava", "guava")
-    exclude("ch.qos.logback", "*")
-    exclude("com.google.gwt", "gwt-user")
-    exclude("org.jboss.netty", "*")
-    exclude("log4j", "*")
-    exclude("org.slf4j", "*")
-    exclude("org.hbase", "asynchbase"),
-  "org.hbase" % "asynchbase-shaded" % "1.7.1"
+  "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "compile"
 )
 
 val hadoopClientExcludes =
@@ -186,14 +177,7 @@ lazy val root = (project in file(".")).
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "it,test"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
       hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests"),
-      "net.opentsdb" % "opentsdb" % openTSDBVersion % "it,test"
-        exclude("net.opentsdb", "opentsdb_gwt_theme")
-        exclude("com.google.guava", "guava")
-        exclude("ch.qos.logback", "*")
-        exclude("com.google.gwt", "gwt-user")
-        exclude("org.jboss.netty", "*")
-        exclude("log4j", "*")
-        exclude("org.slf4j", "*")
+      "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "it,test"
     ),
     headers := Map(
       "sbt" -> Apache2_0("2016", "CGnal S.p.A."),
@@ -224,9 +208,9 @@ lazy val projectAssembly = (project in file("assembly")).
       (projectID in root).value.excludeAll(ExclusionRule(organization = "org.apache.spark")))
   })
 
-val buildShadedLibrary = taskKey[Unit]("Build the shaded library")
+val buildShadedLibraries= taskKey[Unit]("Build the shaded library")
 
-buildShadedLibrary := Process("mvn" :: "install" :: Nil, new File("shaded_asynchbase")).!
+buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
 
-buildShadedLibrary <<= buildShadedLibrary dependsOn buildShadedLibrary
-compile in Compile <<= compile in Compile dependsOn buildShadedLibrary
+buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
+compile in Compile <<= compile in Compile dependsOn buildShadedLibraries

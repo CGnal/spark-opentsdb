@@ -30,7 +30,7 @@ import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.broadcast.Broadcast
-import org.hbase.async.HBaseClient
+import shaded.org.hbase.async.HBaseClient
 import shapeless.{ :+:, CNil, Coproduct }
 
 import scala.annotation.switch
@@ -145,7 +145,7 @@ package object opentsdb {
       }
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
-      val asyncConfig = new org.hbase.async.Config()
+      val asyncConfig = new shaded.org.hbase.async.Config()
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)

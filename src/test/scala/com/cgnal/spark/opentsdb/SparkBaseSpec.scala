@@ -23,7 +23,7 @@ import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.streaming.{ Milliseconds, StreamingContext }
 import org.apache.spark.{ SparkConf, SparkContext }
-import org.hbase.async.HBaseClient
+import shaded.org.hbase.async.HBaseClient
 import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
