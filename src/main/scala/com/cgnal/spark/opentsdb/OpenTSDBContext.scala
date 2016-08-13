@@ -26,11 +26,11 @@ import java.util.TimeZone
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.TSDB
+import net.opentsdb.uid.UniqueId.UniqueIdType
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.{ Result, Scan }
+import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.util.Bytes
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -162,6 +162,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
       )
 
     val rowRDD = if (full) {
+      /*  //TODO to remove in case the TSDB based implementation is working well
       val (mids, kids, vids) = if (keyIds.isEmpty) {
         val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), new Scan().addFamily("id".getBytes)).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
         val mids = tsdbUID.map(l => (l._1.copyBytes, l._2.getValue("id".getBytes, "metrics".getBytes))).filter(p => p._2 != null).collect.map(p => (p._2.mkString, Bytes.toString(p._1))).toMap
@@ -174,15 +175,22 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
       val bmids = sqlContext.sparkContext.broadcast(mids)
       val bkids = sqlContext.sparkContext.broadcast(kids)
       val bvids = sqlContext.sparkContext.broadcast(vids)
-
-      load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).map {
-        row =>
-          Row(
-            row.get(0),
-            bmids.value(row.getAs[Array[Byte]](1).mkString),
-            row.get(2),
-            row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (bkids.value(p._1.mkString), bvids.value(p._2.mkString))): Map[String, String]
-          )
+      */
+      load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).mapPartitions[Row] {
+        iterator =>
+          TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+          val tsdb = TSDBClientManager.tsdb
+          val result = iterator.map {
+            row =>
+              Row(
+                row.get(0),
+                tsdb.getUidName(UniqueIdType.METRIC, row.getAs[Array[Byte]](1)).join(), //TODO check the exact semantic of join
+                row.get(2),
+                row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (tsdb.getUidName(UniqueIdType.TAGK, p._1).join(), tsdb.getUidName(UniqueIdType.TAGV, p._2).join())): Map[String, String]
+              )
+          }
+          //TSDBClientManager.shutdown()
+          result
       }
     } else
       load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).map {
@@ -297,8 +305,8 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   }
 
   def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
-    dstream.foreachRDD { timeseries =>
-      timeseries.foreachPartition { it =>
+    dstream foreachRDD { timeseries =>
+      timeseries foreachPartition { it =>
         TSDBClientManager(keytab_, principal_, hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         writeFunc(it, TSDBClientManager.tsdb)
       }
