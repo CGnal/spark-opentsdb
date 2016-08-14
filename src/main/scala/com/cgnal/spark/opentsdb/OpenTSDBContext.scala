@@ -166,17 +166,18 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
       load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy, full).mapPartitions[Row](
         iterator => {
           TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-          val tsdb = TSDBClientManager.tsdb
-          val result = iterator.map {
-            row =>
-              Row(
-                row.get(0),
-                tsdb.getUidName(UniqueIdType.METRIC, row.getAs[Array[Byte]](1)).join(), //TODO check the exact semantic of join
-                row.get(2),
-                row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (tsdb.getUidName(UniqueIdType.TAGK, p._1).join(), tsdb.getUidName(UniqueIdType.TAGV, p._2).join())): Map[String, String]
-              )
-          }
-          result
+          TSDBClientManager.tsdb.fold(throw _, tsdb => {
+            val result = iterator.map {
+              row =>
+                Row(
+                  row.get(0),
+                  tsdb.getUidName(UniqueIdType.METRIC, row.getAs[Array[Byte]](1)).join(),
+                  row.get(2),
+                  row.getAs[Map[Array[Byte], Array[Byte]]](3).map(p => (tsdb.getUidName(UniqueIdType.TAGK, p._1).join(), tsdb.getUidName(UniqueIdType.TAGV, p._2).join())): Map[String, String]
+                )
+            }
+            result
+          })
         }, preservesPartitioning = true
       )
     } else
@@ -287,8 +288,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      val tsdb = TSDBClientManager.tsdb
-      writeFunc(it, tsdb)
+      TSDBClientManager.tsdb.fold(throw _, writeFunc(it, _))
     })
   }
 
@@ -296,8 +296,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     dstream foreachRDD { timeseries =>
       timeseries foreachPartition { it =>
         TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-        val tsdb = TSDBClientManager.tsdb
-        writeFunc(it, tsdb)
+        TSDBClientManager.tsdb.fold(throw _, writeFunc(it, _))
       }
     }
   }

@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import java.nio.file.{ Files, Paths }
 import java.util.{ Calendar, TimeZone }
 
+import cats.data.Xor
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.conf.Configuration
@@ -104,7 +105,7 @@ package object opentsdb {
 
     def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
-    lazy val tsdb = {
+    lazy val tsdb: Throwable Xor TSDB = try {
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
         val authenticationType = configuration.get("hbase.security.authentication")
@@ -163,7 +164,9 @@ package object opentsdb {
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
       }
       val hbaseClient = new HBaseClient(asyncConfig)
-      new TSDB(hbaseClient, config)
+      Xor.right[Throwable, TSDB](new TSDB(hbaseClient, config))
+    } catch {
+      case e: Throwable => Xor.left[Throwable, TSDB](e)
     }
 
     def apply(keytab: Option[Broadcast[Array[Byte]]], principal: Option[String], hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
