@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <properties>
+        <asynchbase-version>1.7.1</asynchbase-version>
+    </properties>
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.hbase</groupId>
+    <artifactId>asynchbase-shaded</artifactId>
+    <version>${asynchbase-version}</version>
+    <packaging>jar</packaging>
+
+    <name>${project.artifactId}-${project.version}</name>
+    <description>
+        Relocates com.google.protobuf.* to
+        whatever.asynchbase.shaded.com.google.protobuf.*
+        to avoid clashes with older or other versions of protobufs
+        or classloader conflicts. (asynchbase inherits a package
+        private class of protobuf which gets rejected in a spark
+        cluster deployment.)
+    </description>
+
+    <dependencies>
+        <!--
+           gets shaded directly into this project's jar; when deployed this
+           dependency will be removed from the shaded, deployed pom
+        -->
+        <dependency>
+            <groupId>org.hbase</groupId>
+            <artifactId>asynchbase</artifactId>
+            <version>${asynchbase-version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>2.5.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>2.4.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <minimizeJar>false</minimizeJar>
+                            <artifactSet>
+                                <includes>
+                                    <include>org.hbase:asynchbase</include>
+                                    <include>com.google.protobuf:protobuf-java</include>
+                                </includes>
+                            </artifactSet>
+                            <relocations>
+                                <relocation>
+                                    <pattern>com.google.protobuf</pattern>
+                                    <shadedPattern>cgnal.asynchbase.shaded.com.google.protobuf</shadedPattern>
+                                </relocation>
+                            </relocations>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>
