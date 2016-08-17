@@ -59,7 +59,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -71,7 +71,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -83,7 +83,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -95,7 +95,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -107,7 +107,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
     }
   }
@@ -121,7 +121,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val result = ts.collect()
 
-      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](2))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
+      result.map(dp => (dp.timestamp, dp.value)) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
     }
   }
 
