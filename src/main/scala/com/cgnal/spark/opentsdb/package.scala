@@ -136,7 +136,6 @@ package object opentsdb {
                |  principal="${principal.get}"
                |  storeKey=true;
                |};
-
             """.stripMargin
           writeStringToFile(jaasFile, jaasConf)
           System.setProperty(
@@ -193,6 +192,15 @@ package object opentsdb {
       this.tsdbUidTable = tsdbUidTable
     }
 
+  }
+
+  private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
+    val scan = new Scan()
+    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
+    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
+    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
+    scan.setFilter(rowFilter)
+    scan
   }
 
   private[opentsdb] def getMetricScan(

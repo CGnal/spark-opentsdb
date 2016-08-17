@@ -25,7 +25,6 @@ import java.util.TimeZone
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
-import net.opentsdb.uid.UniqueId.UniqueIdType
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
@@ -177,21 +176,24 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[DataPoint] = {
 
-    TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-    val metricUID = TSDBClientManager.tsdb.fold(throw _, tsdb => {
-      tsdb.getUID(UniqueIdType.METRIC, metricName)
-    })
-    TSDBClientManager.shutdown()
-
-    val tagKUIDs = TSDBClientManager.tsdb.fold(throw _, tsdb =>
-      tags.keys.map(key => (key, tsdb.getUID(UniqueIdType.TAGK, key))).toMap)
-
-    val tagVUIDs = TSDBClientManager.tsdb.fold(throw _, tsdb =>
-      tags.values.map(value => (value, tsdb.getUID(UniqueIdType.TAGV, value))).toMap)
+    val uidScan = getUIDScan(metricName, tags)
+    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    tsdbUID.cache()
+    val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
+    val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
+      (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
+    else {
+      (
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
+      )
+    }
+    if (metricsUID.length == 0)
+      throw new Exception(s"Metric not found: $metricName")
 
     val metricScan = getMetricScan(
       tags,
-      metricUID,
+      metricsUID.last,
       tagKUIDs,
       tagVUIDs,
       startdate,
