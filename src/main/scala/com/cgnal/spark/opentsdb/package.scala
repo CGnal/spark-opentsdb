@@ -99,71 +99,93 @@ package object opentsdb {
 
     def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
-    lazy val tsdb: Throwable Xor TSDB = try {
-      val configuration: Configuration = {
-        val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-        val authenticationType = configuration.get("hbase.security.authentication")
-        if (authenticationType == null)
-          HBaseConfiguration.create()
-        else
-          configuration
-      }
-      val authenticationType = configuration.get("hbase.security.authentication")
-      if (authenticationType == "kerberos") {
-        val keytabPath = s"$getCurrentDirectory/keytab"
-        val keytabFile = new File(keytabPath)
-        val byteArray = keytab.get.value
-        Files.write(Paths.get(keytabPath), byteArray)
-        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
-        val jaasConf =
-          s"""
-             |
-            |AsynchbaseClient {
-             |  com.sun.security.auth.module.Krb5LoginModule required
-             |  useTicketCache=false
-             |  useKeyTab=true
-             |  keyTab="$keytabPath"
-             |  principal="${principal.get}"
-             |  storeKey=true;
-             |};
-          """.stripMargin
-        writeStringToFile(jaasFile, jaasConf)
-        System.setProperty("java.security.auth.login.config", jaasFile.getAbsolutePath)
-        log.info(s"Kerberos Principal: ${principal.get}")
-        log.info(s"KeyTab Path: $keytabPath")
-        log.info(s"JAAS File Path: $jaasFile")
-        log.info(
-          s"""JAAS File:
-              |$jaasConf
-          """.
-          stripMargin
-        )
-      }
-      val quorum = configuration.get("hbase.zookeeper.quorum")
-      val port = configuration.get("hbase.zookeeper.property.clientPort")
-      val asyncConfig = new shaded.org.hbase.async.Config()
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
-      asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-
-      if (authenticationType == "kerberos") {
-        configuration.set("hadoop.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
-        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
-        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
-        asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-      }
-      val hbaseClient = new HBaseClient(asyncConfig)
-      Xor.right[Throwable, TSDB](new TSDB(hbaseClient, config))
-    } catch {
-      case e: Throwable => Xor.left[Throwable, TSDB](e)
+    def shutdown() = {
+      _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
+      _tsdb = None
     }
 
-    def apply(keytab: Option[Broadcast[Array[Byte]]], principal: Option[String], hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
+    var _tsdb: Option[Throwable Xor TSDB] = None
+
+    def tsdb_=(tsdb: TSDB) = _tsdb = Some(Xor.right[Throwable, TSDB](tsdb))
+
+    def tsdb: Throwable Xor TSDB = _tsdb.getOrElse {
+      _tsdb = Some(try {
+        val configuration: Configuration = {
+          val configuration: Configuration = hbaseContext.broadcastedConf.value.value
+          val authenticationType = configuration.get("hbase.security.authentication")
+          if (authenticationType == null)
+            HBaseConfiguration.create()
+          else
+            configuration
+        }
+        val authenticationType = configuration.get("hbase.security.authentication")
+        if (authenticationType == "kerberos") {
+          val keytabPath = s"$getCurrentDirectory/keytab"
+          val keytabFile = new File(keytabPath)
+          val byteArray = keytab.get.value
+          Files.write(Paths.get(keytabPath), byteArray)
+          val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+          val jaasConf =
+            s"""
+               |
+               |AsynchbaseClient {
+               |  com.sun.security.auth.module.Krb5LoginModule required
+               |  useTicketCache=false
+               |  useKeyTab=true
+               |  keyTab="$keytabPath"
+               |  principal="${principal.get}"
+               |  storeKey=true;
+               |};
+
+            """.stripMargin
+          writeStringToFile(jaasFile, jaasConf)
+          System.setProperty(
+            "java.security.auth.login.config",
+            jaasFile.getAbsolutePath
+          )
+          log.info(s"Kerberos Principal: ${principal.get}")
+          log.info(s"KeyTab Path: $keytabPath")
+          log.info(s"JAAS File Path: $jaasFile")
+          log.info(
+            s"""JAAS File:
+                |$jaasConf
+            """.
+            stripMargin
+          )
+        }
+        val quorum = configuration.get("hbase.zookeeper.quorum")
+        val port = configuration.get("hbase.zookeeper.property.clientPort")
+        val asyncConfig = new shaded.org.hbase.async.Config()
+        val config = new Config(false)
+        config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
+        config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+        config.overrideConfig("tsd.core.auto_create_metrics", "true")
+        config.disableCompactions()
+        asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
+        asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
+
+        if (authenticationType == "kerberos") {
+          configuration.set("hadoop.security.authentication", "kerberos")
+          asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
+          asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
+          asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
+          asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
+          asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
+        }
+        val hbaseClient = new HBaseClient(asyncConfig)
+        Xor.right[Throwable, TSDB](new TSDB(hbaseClient, config))
+      } catch {
+        case e: Throwable => Xor.left[Throwable, TSDB](e)
+      })
+      _tsdb.get
+    }
+
+    def apply(
+      keytab: Option[Broadcast[Array[Byte]]],
+      principal: Option[String],
+      hbaseContext: HBaseContext,
+      tsdbTable: String, tsdbUidTable: String
+    ): Unit = {
       this.keytab = keytab
       this.principal = principal
       this.hbaseContext = hbaseContext
@@ -175,7 +197,7 @@ package object opentsdb {
 
   private[opentsdb] def getMetricScan(
     tags: Map[String, String],
-    metricsUID: Array[Array[Byte]],
+    metricUID: Array[Byte],
     tagKUIDs: Map[String, Array[Byte]],
     tagVUIDs: Map[String, Array[Byte]],
     startdate: Option[String],
@@ -191,9 +213,9 @@ package object opentsdb {
       map(l => l._1 ++ l._2).toList.sorted(Ordering.by((_: Array[Byte]).toIterable))
     val scan = new Scan()
     val name = if (tagKV.nonEmpty)
-      String.format("^%s.*%s.*$", bytes2hex(metricsUID.last, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
+      String.format("^%s.*%s.*$", bytes2hex(metricUID, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
     else
-      String.format("^%s.+$", bytes2hex(metricsUID.last, "\\x"))
+      String.format("^%s.+$", bytes2hex(metricUID, "\\x"))
 
     val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
@@ -212,11 +234,11 @@ package object opentsdb {
     endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
 
     if (tagKV.nonEmpty) {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
     } else {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
     }
     scan
   }

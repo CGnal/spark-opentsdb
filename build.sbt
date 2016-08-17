@@ -60,8 +60,6 @@ val openTSDBVersion = "2.2.0"
 
 val sparkTSVersion = "0.3.0"
 
-val shapelessVersion = "2.3.1"
-
 val catsVersion = "0.6.1"
 
 resolvers ++= Seq(
@@ -117,7 +115,6 @@ val assemblyDependencies = Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
-  "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
   "org.typelevel" %% "cats" % catsVersion % "compile",
   "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "compile"
 )

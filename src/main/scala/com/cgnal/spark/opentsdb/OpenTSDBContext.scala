@@ -77,8 +77,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     enddate: String,
     frequency: Frequency,
     metrics: List[(String, Map[String, String])],
-    dateFormat: String = this.dateFormat,
-    conversionStrategy: ConversionStrategy = ConvertToDouble
+    dateFormat: String = this.dateFormat
   ): TimeSeriesRDD[String] = {
 
     val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
@@ -182,6 +181,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     val metricUID = TSDBClientManager.tsdb.fold(throw _, tsdb => {
       tsdb.getUID(UniqueIdType.METRIC, metricName)
     })
+    TSDBClientManager.shutdown()
 
     val tagKUIDs = TSDBClientManager.tsdb.fold(throw _, tsdb =>
       tags.keys.map(key => (key, tsdb.getUID(UniqueIdType.TAGK, key))).toMap)
@@ -191,7 +191,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
 
     val metricScan = getMetricScan(
       tags,
-      Array(metricUID),
+      metricUID,
       tagKUIDs,
       tagVUIDs,
       startdate,
@@ -255,12 +255,11 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     val rdd = tsdb.mapPartitions[Iterator[DataPoint]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint]] {
-
         val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _)))
 
         override def hasNext =
           if (!i.hasNext) {
-            //shutdown()
+            TSDBClientManager.shutdown()
             false
           } else
             i.hasNext
@@ -275,7 +274,18 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      TSDBClientManager.tsdb.fold(throw _, writeFunc(it, _))
+      TSDBClientManager.tsdb.fold(throw _, writeFunc(
+        new Iterator[(String, Long, T, Map[String, String])] {
+          override def hasNext =
+            if (!it.hasNext) {
+              TSDBClientManager.shutdown()
+              false
+            } else
+              it.hasNext
+
+          override def next() = it.next()
+        }, _
+      ))
     })
   }
 
@@ -285,7 +295,18 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
         timeseries foreachPartition {
           it =>
             TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-            TSDBClientManager.tsdb.fold(throw _, writeFunc(it, _))
+            TSDBClientManager.tsdb.fold(throw _, writeFunc(
+              new Iterator[(String, Long, T, Map[String, String])] {
+                override def hasNext =
+                  if (!it.hasNext) {
+                    TSDBClientManager.shutdown()
+                    false
+                  } else
+                    it.hasNext
+
+                override def next() = it.next()
+              }, _
+            ))
         }
     }
   }
