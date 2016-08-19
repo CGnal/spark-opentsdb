@@ -39,11 +39,10 @@ import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
 import scala.collection.JavaConversions._
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.language.reflectiveCalls
 
-case class DataPoint(metric: String, tags: Map[String, String], timestamp: Long, value: AnyVal) extends Serializable
+case class DataPoint[T <: AnyVal](metric: String, tags: Map[String, String], timestamp: Long, value: T) extends Serializable
 
 class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
@@ -102,8 +101,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       m._2,
       Some(startdate),
       Some(enddate),
-      dateFormat,
-      ConvertToDouble
+      dateFormat
     ))
 
     val initDF = dfs.headOption.get
@@ -128,23 +126,18 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
     enddate: Option[String] = None,
-    dateFormat: String = this.dateFormat,
-    conversionStrategy: ConversionStrategy = ConvertToDouble
+    dateFormat: String = this.dateFormat
   ): DataFrame = {
     val schema = StructType(
       Array(
         StructField("timestamp", TimestampType, nullable = false),
         StructField("metric", StringType, nullable = false),
-        conversionStrategy match {
-          case ConvertToFloat => StructField("value", FloatType, nullable = false)
-          case ConvertToDouble => StructField("value", DoubleType, nullable = false)
-          case NoConversion => throw new Exception("") //TODO better error handling
-        },
+        StructField("value", DoubleType, nullable = false),
         StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
       )
     )
 
-    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, conversionStrategy).mapPartitions[Row](
+    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, ConvertToDouble).mapPartitions[Row](
       iterator => {
         TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         TSDBClientManager.tsdb.fold(throw _, tsdb => {
@@ -153,11 +146,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               Row(
                 new Timestamp(dp.timestamp),
                 dp.metric,
-                conversionStrategy match {
-                  case ConvertToDouble => dp.value.asInstanceOf[Double]
-                  case ConvertToFloat => dp.value.asInstanceOf[Float]
-                  case NoConversion => throw new Exception("it shouldn't be here")
-                },
+                dp.value.asInstanceOf[Double],
                 dp.tags
               )
           }
@@ -176,7 +165,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = NoConversion
-  ): RDD[DataPoint] = {
+  ): RDD[DataPoint[_]] = {
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
@@ -204,32 +193,31 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint] = {
+    def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint[_]] = {
       val key = row._1.get()
       val metric = Internal.metricName(tsdb, key)
       val baseTime = Internal.baseTime(tsdb, key)
       val tags = Internal.getTags(tsdb, key).toMap
 
-      var dps = new ListBuffer[DataPoint]
+      var dps = new ListBuffer[DataPoint[_]]
 
       for (cell <- row._2.rawCells()) {
-
         val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
         val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
         val value = util.Arrays.copyOfRange(cell.getValueArray, cell.getValueOffset, cell.getValueOffset + cell.getValueLength)
         val kv = new KeyValue(key, family, qualifier, cell.getTimestamp, value)
-
         if (qualifier.length == 2 || qualifier.length == 4 && Internal.inMilliseconds(qualifier)) {
           val cell = Internal.parseSingleValue(kv)
           if (cell == null) {
             throw new IllegalDataException("Unable to parse row: " + kv)
           }
-          dps += DataPoint(metric, tags, cell.absoluteTimestamp(baseTime),
-            conversionStrategy match {
-              case ConvertToDouble => cell.parseValue().doubleValue()
-              case ConvertToFloat => cell.parseValue().floatValue()
-              case NoConversion => cell.parseValue().asInstanceOf[AnyVal]
-            })
+          dps += (conversionStrategy match {
+            case ConvertToDouble => DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+            case NoConversion => if (cell.isInteger)
+              DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue())
+            else
+              DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+          })
         } else {
           // compacted column
           val cells = new ListBuffer[Internal.Cell]
@@ -239,25 +227,23 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
             case e: IllegalDataException =>
               throw new IllegalDataException(Bytes.toStringBinary(key), e);
           }
-
           for (cell <- cells) {
-            dps += DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), conversionStrategy match {
-              case ConvertToDouble => cell.parseValue().doubleValue()
-              case ConvertToFloat => cell.parseValue().floatValue()
-              case NoConversion => cell.parseValue().asInstanceOf[AnyVal]
+            dps += (conversionStrategy match {
+              case ConvertToDouble => DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+              case NoConversion => if (cell.isInteger)
+                DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue())
+              else
+                DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
             })
           }
         }
-
-        dps.iterator
-      }.asJava
-
+      }
       dps.iterator
     }
 
-    val rdd = rows.mapPartitions[Iterator[DataPoint]](iterator => {
+    val rdd = rows.mapPartitions[Iterator[DataPoint[_]]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      new Iterator[Iterator[DataPoint]] {
+      new Iterator[Iterator[DataPoint[_]]] {
         val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _)))
 
         override def hasNext =
@@ -271,7 +257,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       }
     })
 
-    rdd.flatMap(identity[Iterator[DataPoint]])
+    rdd.flatMap(identity[Iterator[DataPoint[_]]])
   }
 
   def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {

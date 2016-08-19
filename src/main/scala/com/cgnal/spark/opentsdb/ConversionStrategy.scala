@@ -20,6 +20,4 @@ sealed trait ConversionStrategy
 
 case object NoConversion extends ConversionStrategy
 
-case object ConvertToFloat extends ConversionStrategy
-
 case object ConvertToDouble extends ConversionStrategy

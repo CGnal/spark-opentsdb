@@ -36,14 +36,14 @@ scalacOptions ++= Seq(
 )
 
 wartremoverErrors ++= Seq(
-  Wart.Any,
+  //Wart.Any,
   Wart.Any2StringAdd,
   Wart.EitherProjectionPartial,
   //  Wart.OptionPartial,
   Wart.Product,
   Wart.Serializable,
-  Wart.ListOps,
-  Wart.Nothing
+  Wart.ListOps
+  //Wart.Nothing
 )
 
 val sparkVersion = "1.6.0-cdh5.7.1"

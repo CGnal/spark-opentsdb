@@ -21,7 +21,7 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.{ ConvertToFloat, OpenTSDBContext, _ }
+import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
@@ -101,7 +101,7 @@ object Main extends App {
 
   val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
   simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
   val result = df.collect()
 
