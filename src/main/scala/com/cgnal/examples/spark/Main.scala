@@ -21,11 +21,10 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.{ ConvertToFloat, OpenTSDBContext, _ }
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.spark.HBaseContext
+import com.cgnal.spark.opentsdb.{ConvertToFloat, OpenTSDBContext, _}
+import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.{SparkConf, SparkContext}
 
 /*
 spark-submit --executor-memory 1200M \
@@ -83,8 +82,7 @@ object Main extends App {
 
   val sparkContext = new SparkContext(conf)
   val sqlContext = new SQLContext(sparkContext)
-  val hbaseContext = new HBaseContext(sparkContext, new Configuration())
-  val openTSDBContext = new OpenTSDBContext(sqlContext, hbaseContext)
+  val openTSDBContext = new OpenTSDBContext(sqlContext, HBaseConfiguration.create())
 
   openTSDBContext.keytab = args(1)
 
@@ -103,7 +101,7 @@ object Main extends App {
 
   val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
   simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-  val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
   val result = df.collect()
 

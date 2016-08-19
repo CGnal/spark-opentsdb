@@ -140,7 +140,7 @@ class SparkSpec extends SparkBaseSpec {
 
       FileImporter.importFile(hBaseClient, tsdb, "data/opentsdb.input", skip_errors = false)
 
-      val df = openTSDBContext.loadDataFrame(sqlContext, "open", Map.empty[String, String], Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
+      val df = openTSDBContext.loadDataFrame("open", Map.empty[String, String], Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
 
       df.registerTempTable("open")
 
@@ -219,7 +219,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
       df.schema must be(
         StructType(
@@ -263,7 +263,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
 
       df.schema must be(
         StructType(

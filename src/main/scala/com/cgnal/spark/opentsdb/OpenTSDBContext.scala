@@ -25,6 +25,7 @@ import java.util.TimeZone
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
@@ -38,12 +39,15 @@ import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.language.reflectiveCalls
 
 case class DataPoint(metric: String, tags: Map[String, String], timestamp: Long, value: AnyVal) extends Serializable
 
-class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(sqlContext: SQLContext, configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+
+  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration)
 
   var tsdbTable = "tsdb"
 
@@ -94,7 +98,6 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
     index = index.atZone(ZoneId.of("UTC"))
 
     val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
-      sqlContext,
       m._1,
       m._2,
       Some(startdate),
@@ -121,7 +124,6 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
   }
 
   def loadDataFrame(
-    sqlContext: SQLContext,
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
     startdate: Option[String] = None,
@@ -212,13 +214,13 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
 
       for (cell <- row._2.rawCells()) {
 
-        val family = util.Arrays.copyOfRange(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyOffset() + cell.getFamilyLength());
-        val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierOffset() + cell.getQualifierLength());
-        val value = util.Arrays.copyOfRange(cell.getValueArray(), cell.getValueOffset(), cell.getValueOffset() + cell.getValueLength());
-        val kv = new KeyValue(key, family, qualifier, cell.getTimestamp(), value);
+        val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
+        val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
+        val value = util.Arrays.copyOfRange(cell.getValueArray, cell.getValueOffset, cell.getValueOffset + cell.getValueLength)
+        val kv = new KeyValue(key, family, qualifier, cell.getTimestamp, value)
 
         if (qualifier.length == 2 || qualifier.length == 4 && Internal.inMilliseconds(qualifier)) {
-          val cell = Internal.parseSingleValue(kv);
+          val cell = Internal.parseSingleValue(kv)
           if (cell == null) {
             throw new IllegalDataException("Unable to parse row: " + kv)
           }
@@ -248,7 +250,7 @@ class OpenTSDBContext(sqlContext: SQLContext, hbaseContext: HBaseContext, dateFo
         }
 
         dps.iterator
-      }
+      }.asJava
 
       dps.iterator
     }
