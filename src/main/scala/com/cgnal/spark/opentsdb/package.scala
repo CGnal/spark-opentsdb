@@ -79,8 +79,6 @@ package object opentsdb {
 
   object TSDBClientManager {
 
-    @transient lazy val log = org.apache.log4j.LogManager.getLogger(this.getClass.getName)
-
     var hbaseContext: HBaseContext = _
 
     var keytab: Option[Broadcast[Array[Byte]]] = None
@@ -97,7 +95,7 @@ package object opentsdb {
       bw.close()
     }
 
-    def getCurrentDirectory = new java.io.File(".").getCanonicalPath
+    private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
     def shutdown() = {
       _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
@@ -119,39 +117,6 @@ package object opentsdb {
             configuration
         }
         val authenticationType = configuration.get("hbase.security.authentication")
-        if (authenticationType == "kerberos") {
-          val keytabPath = s"$getCurrentDirectory/keytab"
-          val keytabFile = new File(keytabPath)
-          val byteArray = keytab.get.value
-          Files.write(Paths.get(keytabPath), byteArray)
-          val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
-          val jaasConf =
-            s"""
-               |
-               |AsynchbaseClient {
-               |  com.sun.security.auth.module.Krb5LoginModule required
-               |  useTicketCache=false
-               |  useKeyTab=true
-               |  keyTab="$keytabPath"
-               |  principal="${principal.get}"
-               |  storeKey=true;
-               |};
-            """.stripMargin
-          writeStringToFile(jaasFile, jaasConf)
-          System.setProperty(
-            "java.security.auth.login.config",
-            jaasFile.getAbsolutePath
-          )
-          log.info(s"Kerberos Principal: ${principal.get}")
-          log.info(s"KeyTab Path: $keytabPath")
-          log.info(s"JAAS File Path: $jaasFile")
-          log.info(
-            s"""JAAS File:
-                |$jaasConf
-            """.
-            stripMargin
-          )
-        }
         val quorum = configuration.get("hbase.zookeeper.quorum")
         val port = configuration.get("hbase.zookeeper.property.clientPort")
         val asyncConfig = new shaded.org.hbase.async.Config()
@@ -162,8 +127,27 @@ package object opentsdb {
         config.disableCompactions()
         asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
         asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-
         if (authenticationType == "kerberos") {
+          val keytabPath = s"$getCurrentDirectory/keytab"
+          val keytabFile = new File(keytabPath)
+          val byteArray = keytab.get.value
+          Files.write(Paths.get(keytabPath), byteArray)
+          val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+          val jaasConf =
+            s"""AsynchbaseClient {
+                |  com.sun.security.auth.module.Krb5LoginModule required
+                |  useTicketCache=false
+                |  useKeyTab=true
+                |  keyTab="$keytabPath"
+                |  principal="${principal.get}"
+                |  storeKey=true;
+                };
+            """.stripMargin
+          writeStringToFile(jaasFile, jaasConf)
+          System.setProperty(
+            "java.security.auth.login.config",
+            jaasFile.getAbsolutePath
+          )
           configuration.set("hadoop.security.authentication", "kerberos")
           asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
           asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")

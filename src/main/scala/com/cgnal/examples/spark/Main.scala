@@ -21,10 +21,10 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.{ConvertToFloat, OpenTSDBContext, _}
-import org.apache.hadoop.hbase.HBaseConfiguration
+import com.cgnal.spark.opentsdb.{ ConvertToFloat, OpenTSDBContext, _ }
+import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{ SparkConf, SparkContext }
 
 /*
 spark-submit --executor-memory 1200M \
@@ -82,7 +82,7 @@ object Main extends App {
 
   val sparkContext = new SparkContext(conf)
   val sqlContext = new SQLContext(sparkContext)
-  val openTSDBContext = new OpenTSDBContext(sqlContext, HBaseConfiguration.create())
+  val openTSDBContext = new OpenTSDBContext(sqlContext, new Configuration())
 
   openTSDBContext.keytab = args(1)
 

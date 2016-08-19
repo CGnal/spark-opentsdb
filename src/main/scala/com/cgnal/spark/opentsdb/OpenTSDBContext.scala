@@ -45,7 +45,7 @@ import scala.language.reflectiveCalls
 
 case class DataPoint(metric: String, tags: Map[String, String], timestamp: Long, value: AnyVal) extends Serializable
 
-class OpenTSDBContext(sqlContext: SQLContext, configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
   val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration)
 
@@ -202,7 +202,7 @@ class OpenTSDBContext(sqlContext: SQLContext, configuration: Configuration, date
       dateFormat
     )
 
-    val tsdb = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
     def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint] = {
       val key = row._1.get()
@@ -255,7 +255,7 @@ class OpenTSDBContext(sqlContext: SQLContext, configuration: Configuration, date
       dps.iterator
     }
 
-    val rdd = tsdb.mapPartitions[Iterator[DataPoint]](iterator => {
+    val rdd = rows.mapPartitions[Iterator[DataPoint]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint]] {
         val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _)))
