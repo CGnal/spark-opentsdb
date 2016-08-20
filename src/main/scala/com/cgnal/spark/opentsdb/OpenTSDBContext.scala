@@ -165,7 +165,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     enddate: Option[String] = None,
     dateFormat: String = this.dateFormat,
     conversionStrategy: ConversionStrategy = NoConversion
-  ): RDD[DataPoint[_]] = {
+  ): RDD[DataPoint[_ <: AnyVal]] = {
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
@@ -193,15 +193,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint[_]] = {
+    def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint[_ <: AnyVal]] = {
       val key = row._1.get()
       val metric = Internal.metricName(tsdb, key)
       val baseTime = Internal.baseTime(tsdb, key)
       val tags = Internal.getTags(tsdb, key).toMap
-
-      var dps = new ListBuffer[DataPoint[_]]
-
-      for (cell <- row._2.rawCells()) {
+      var dps = new ListBuffer[DataPoint[_ <: AnyVal]]
+      row._2.rawCells().foreach[Unit](cell => {
         val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
         val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
         val value = util.Arrays.copyOfRange(cell.getValueArray, cell.getValueOffset, cell.getValueOffset + cell.getValueLength)
@@ -237,13 +235,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
             })
           }
         }
-      }
+        ()
+      })
       dps.iterator
     }
 
-    val rdd = rows.mapPartitions[Iterator[DataPoint[_]]](iterator => {
+    val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      new Iterator[Iterator[DataPoint[_]]] {
+      new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
         val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _)))
 
         override def hasNext =
@@ -257,7 +256,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       }
     })
 
-    rdd.flatMap(identity[Iterator[DataPoint[_]]])
+    rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
 
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
