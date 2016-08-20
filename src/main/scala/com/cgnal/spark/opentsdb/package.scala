@@ -35,45 +35,45 @@ import shaded.org.hbase.async.HBaseClient
 
 package object opentsdb {
 
-  implicit val writeForByte: (Iterator[(String, Long, Byte, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForShort: (Iterator[(String, Long, Short, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForInt: (Iterator[(String, Long, Int, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForLong: (Iterator[(String, Long, Long, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 
-  implicit val writeForFloat: (Iterator[(String, Long, Float, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 
-  implicit val writeForDouble: (Iterator[(String, Long, Double, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 

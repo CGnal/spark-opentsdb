@@ -248,12 +248,12 @@ class SparkSpec extends SparkBaseSpec {
         i <- 0 until 10
         ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         epoch = ts.getTime
-        point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+        point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
       } yield point
 
-      val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
+      val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
-      val stream = streamingContext.queueStream[(String, Long, Double, Map[String, String])](mutable.Queue(rdd))
+      val stream = streamingContext.queueStream[DataPoint[Double]](mutable.Queue(rdd))
 
       openTSDBContext.streamWrite(stream)
 

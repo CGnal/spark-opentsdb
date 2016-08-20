@@ -42,7 +42,7 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable.ListBuffer
 import scala.language.reflectiveCalls
 
-case class DataPoint[T <: AnyVal](metric: String, tags: Map[String, String], timestamp: Long, value: T) extends Serializable
+case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
 class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
 
@@ -212,11 +212,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
             throw new IllegalDataException("Unable to parse row: " + kv)
           }
           dps += (conversionStrategy match {
-            case ConvertToDouble => DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+            case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
             case NoConversion => if (cell.isInteger)
-              DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue())
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
             else
-              DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
           })
         } else {
           // compacted column
@@ -229,11 +229,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
           }
           for (cell <- cells) {
             dps += (conversionStrategy match {
-              case ConvertToDouble => DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+              case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
               case NoConversion => if (cell.isInteger)
-                DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue())
+                DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
               else
-                DataPoint(metric, tags, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue())
+                DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
             })
           }
         }
@@ -260,11 +260,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     rdd.flatMap(identity[Iterator[DataPoint[_]]])
   }
 
-  def write[T](timeseries: RDD[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
+  def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       TSDBClientManager.tsdb.fold(throw _, writeFunc(
-        new Iterator[(String, Long, T, Map[String, String])] {
+        new Iterator[DataPoint[T]] {
           override def hasNext =
             if (!it.hasNext) {
               TSDBClientManager.shutdown()
@@ -278,14 +278,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     })
   }
 
-  def streamWrite[T](dstream: DStream[(String, Long, T, Map[String, String])])(implicit writeFunc: (Iterator[(String, Long, T, Map[String, String])], TSDB) => Unit): Unit = {
+  def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     dstream foreachRDD {
       timeseries =>
         timeseries foreachPartition {
           it =>
             TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
             TSDBClientManager.tsdb.fold(throw _, writeFunc(
-              new Iterator[(String, Long, T, Map[String, String])] {
+              new Iterator[DataPoint[T]] {
                 override def hasNext =
                   if (!it.hasNext) {
                     TSDBClientManager.shutdown()
