@@ -89,13 +89,13 @@ package object opentsdb {
 
     var tsdbUidTable: String = _
 
-    private def writeStringToFile(file: File, str: String): Unit = {
+    @inline private def writeStringToFile(file: File, str: String): Unit = {
       val bw = new BufferedWriter(new FileWriter(file))
       bw.write(str)
       bw.close()
     }
 
-    private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
+    @inline private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
     def shutdown() = {
       _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
@@ -103,8 +103,6 @@ package object opentsdb {
     }
 
     var _tsdb: Option[Throwable Xor TSDB] = None
-
-    def tsdb_=(tsdb: TSDB) = _tsdb = Some(Xor.right[Throwable, TSDB](tsdb))
 
     def tsdb: Throwable Xor TSDB = _tsdb.getOrElse {
       _tsdb = Some(try {
