@@ -193,57 +193,10 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB): Iterator[DataPoint[_ <: AnyVal]] = {
-      val key = row._1.get()
-      val metric = Internal.metricName(tsdb, key)
-      val baseTime = Internal.baseTime(tsdb, key)
-      val tags = Internal.getTags(tsdb, key).toMap
-      var dps = new ListBuffer[DataPoint[_ <: AnyVal]]
-      row._2.rawCells().foreach[Unit](cell => {
-        val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
-        val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
-        val value = util.Arrays.copyOfRange(cell.getValueArray, cell.getValueOffset, cell.getValueOffset + cell.getValueLength)
-        val kv = new KeyValue(key, family, qualifier, cell.getTimestamp, value)
-        if (qualifier.length == 2 || qualifier.length == 4 && Internal.inMilliseconds(qualifier)) {
-          val cell = Internal.parseSingleValue(kv)
-          if (cell == null) {
-            throw new IllegalDataException("Unable to parse row: " + kv)
-          }
-          dps += (conversionStrategy match {
-            case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-            case NoConversion => if (cell.isInteger)
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
-            else
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-          })
-        } else {
-          // compacted column
-          val cells = new ListBuffer[Internal.Cell]
-          try {
-            cells ++= Internal.extractDataPoints(kv)
-          } catch {
-            case e: IllegalDataException =>
-              throw new IllegalDataException(Bytes.toStringBinary(key), e);
-          }
-          for (cell <- cells) {
-            dps += (conversionStrategy match {
-              case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-              case NoConversion => if (cell.isInteger)
-                DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
-              else
-                DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-            })
-          }
-        }
-        ()
-      })
-      dps.iterator
-    }
-
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
-        val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _)))
+        val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _, conversionStrategy)))
 
         override def hasNext =
           if (!i.hasNext) {
@@ -257,6 +210,53 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     })
 
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
+  }
+
+  private def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB, conversionStrategy: ConversionStrategy): Iterator[DataPoint[_ <: AnyVal]] = {
+    val key = row._1.get()
+    val metric = Internal.metricName(tsdb, key)
+    val baseTime = Internal.baseTime(tsdb, key)
+    val tags = Internal.getTags(tsdb, key).toMap
+    var dps = new ListBuffer[DataPoint[_ <: AnyVal]]
+    row._2.rawCells().foreach[Unit](cell => {
+      val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
+      val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
+      val value = util.Arrays.copyOfRange(cell.getValueArray, cell.getValueOffset, cell.getValueOffset + cell.getValueLength)
+      val kv = new KeyValue(key, family, qualifier, cell.getTimestamp, value)
+      if (qualifier.length == 2 || qualifier.length == 4 && Internal.inMilliseconds(qualifier)) {
+        val cell = Internal.parseSingleValue(kv)
+        if (cell == null) {
+          throw new IllegalDataException("Unable to parse row: " + kv)
+        }
+        dps += (conversionStrategy match {
+          case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+          case NoConversion => if (cell.isInteger)
+            DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+          else
+            DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+        })
+      } else {
+        // compacted column
+        val cells = new ListBuffer[Internal.Cell]
+        try {
+          cells ++= Internal.extractDataPoints(kv)
+        } catch {
+          case e: IllegalDataException =>
+            throw new IllegalDataException(Bytes.toStringBinary(key), e);
+        }
+        for (cell <- cells) {
+          dps += (conversionStrategy match {
+            case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+            case NoConversion => if (cell.isInteger)
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+            else
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+          })
+        }
+      }
+      ()
+    })
+    dps.iterator
   }
 
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
