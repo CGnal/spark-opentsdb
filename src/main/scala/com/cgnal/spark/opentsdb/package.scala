@@ -130,7 +130,7 @@ package object opentsdb {
         if (authenticationType == "kerberos") {
           val keytabPath = s"$getCurrentDirectory/keytab"
           val keytabFile = new File(keytabPath)
-          val byteArray = keytab.get.value
+          val byteArray = keytab.getOrElse(throw new Exception).value
           Files.write(Paths.get(keytabPath), byteArray)
           val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
           val jaasConf =
@@ -139,7 +139,7 @@ package object opentsdb {
                 |  useTicketCache=false
                 |  useKeyTab=true
                 |  keyTab="$keytabPath"
-                |  principal="${principal.get}"
+                |  principal="${principal.getOrElse(throw new Exception)}"
                 |  storeKey=true;
                 };
             """.stripMargin
@@ -160,7 +160,7 @@ package object opentsdb {
       } catch {
         case e: Throwable => Xor.left[Throwable, TSDB](e)
       })
-      _tsdb.get
+      _tsdb.getOrElse(throw new Exception)
     }
 
     def apply(
@@ -220,10 +220,10 @@ package object opentsdb {
     val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
 
     val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.get else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
+    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.getOrElse(throw new Exception) else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
 
     val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
+    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.getOrElse(throw new Exception) else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
 
     if (tagKV.nonEmpty) {
       scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))

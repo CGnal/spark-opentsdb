@@ -39,7 +39,7 @@ wartremoverErrors ++= Seq(
   Wart.Any,
   Wart.Any2StringAdd,
   Wart.EitherProjectionPartial,
-  //  Wart.OptionPartial,
+  Wart.OptionPartial,
   Wart.Product,
   Wart.Serializable,
   Wart.ListOps

@@ -62,7 +62,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   private var principal_ : Option[String] = None
 
-  def keytab = keytab_.get
+  def keytab = keytab_.getOrElse(throw new Exception("keytab has not been defined"))
 
   def keytab_=(keytab: String) = {
     val keytabPath = new File(keytab).getAbsolutePath
@@ -70,7 +70,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     keytab_ = Some(sqlContext.sparkContext.broadcast(byteArray))
   }
 
-  def principal = principal_.get
+  def principal = principal_.getOrElse(throw new Exception("principal has not been defined"))
 
   def principal_=(principal: String) = principal_ = Some(principal)
 
@@ -104,7 +104,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       dateFormat
     ))
 
-    val initDF = dfs.headOption.get
+    val initDF = dfs.headOption.fold(throw new Exception("There must be at least one dataframe"))(identity)
     val otherDFs = dfs.drop(1)
 
     val observations = if (otherDFs.isEmpty)
