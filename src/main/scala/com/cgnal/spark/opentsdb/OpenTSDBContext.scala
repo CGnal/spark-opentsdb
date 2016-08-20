@@ -104,7 +104,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       dateFormat
     ))
 
-    val initDF = dfs.headOption.fold(throw new Exception("There must be at least one dataframe"))(identity)
+    val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
     val otherDFs = dfs.drop(1)
 
     val observations = if (otherDFs.isEmpty)
