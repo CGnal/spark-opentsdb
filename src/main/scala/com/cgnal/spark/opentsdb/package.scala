@@ -30,6 +30,7 @@ import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
+import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
 
@@ -79,6 +80,8 @@ package object opentsdb {
 
   object TSDBClientManager {
 
+    @transient lazy val log = Logger.getLogger(getClass.getName)
+
     @inline private def writeStringToFile(file: File, str: String): Unit = {
       val bw = new BufferedWriter(new FileWriter(file))
       bw.write(str)
@@ -88,6 +91,7 @@ package object opentsdb {
     @inline private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
     def shutdown() = {
+      log.trace("About to shutdown the TSDB client instance")
       _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
       _tsdb = None
     }
@@ -101,6 +105,7 @@ package object opentsdb {
     def tsdb: Throwable Xor TSDB = try {
       _tsdb.getOrElse {
         try {
+          log.trace("Creating the TSDB client instance")
           val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
           val tsdb = Xor.right[Throwable, TSDB](new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available"))))
           _tsdb = Some(tsdb)
@@ -163,6 +168,10 @@ package object opentsdb {
         asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
         asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
+        log.trace("Created kerberos configuration environment")
+        log.trace(s"principal: ${principal.getOrElse(throw new Exception)}")
+        log.trace(s"jaas path: ${jaasFile.getAbsolutePath}")
+        log.trace(s"keytab path: $keytabPath")
       }
       _config = Some(config)
       _asyncConfig = Some(asyncConfig)

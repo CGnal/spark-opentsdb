@@ -65,6 +65,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     config.overrideConfig("tsd.storage.hbase.data_table", "tsdb")
     config.overrideConfig("tsd.storage.hbase.uid_table", "tsdb-uid")
     config.overrideConfig("tsd.core.auto_create_metrics", "true")
+    config.disableCompactions()
     tsdb = new TSDB(hbaseAsyncClient, config)
   }
 

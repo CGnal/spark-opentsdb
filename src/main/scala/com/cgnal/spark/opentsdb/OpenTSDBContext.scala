@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.util.Bytes
+import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -45,6 +46,8 @@ import scala.language.reflectiveCalls
 case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
 class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+
+  @transient lazy val log = Logger.getLogger(getClass.getName)
 
   val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration)
 
@@ -167,6 +170,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[DataPoint[_ <: AnyVal]] = {
 
+    log.info("Loading metric and tags uids")
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
     val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
@@ -180,6 +184,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     }
     if (metricsUID.length == 0)
       throw new Exception(s"Metric not found: $metricName")
+    log.info("Loading metric and tags uids: done")
 
     val metricScan = getMetricScan(
       tags,
@@ -200,6 +205,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
         override def hasNext =
           if (!i.hasNext) {
+            log.trace("iterating done, about to shutdown the TSDB client instance")
             TSDBClientManager.shutdown()
             false
           } else
@@ -213,6 +219,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   }
 
   private def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB, conversionStrategy: ConversionStrategy): Iterator[DataPoint[_ <: AnyVal]] = {
+    log.trace("processing row")
     val key = row._1.get()
     val metric = Internal.metricName(tsdb, key)
     val baseTime = Internal.baseTime(tsdb, key)
@@ -237,6 +244,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         })
       } else {
         // compacted column
+        log.trace("processing compacted row")
         val cells = new ListBuffer[Internal.Cell]
         try {
           cells ++= Internal.extractDataPoints(kv)
@@ -253,9 +261,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
           })
         }
+        log.trace(s"processed ${cells.length} cells")
       }
       ()
     })
+    log.trace("processing row: done")
     dps.iterator
   }
 
@@ -266,6 +276,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         new Iterator[DataPoint[T]] {
           override def hasNext =
             if (!it.hasNext) {
+              log.trace("iterating done, about to shutdown the TSDB client instance")
               TSDBClientManager.shutdown()
               false
             } else
@@ -287,6 +298,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               new Iterator[DataPoint[T]] {
                 override def hasNext =
                   if (!it.hasNext) {
+                    log.trace("iterating done, about to shutdown the TSDB client instance")
                     TSDBClientManager.shutdown()
                     false
                   } else
