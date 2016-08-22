@@ -30,6 +30,7 @@ import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
+import org.apache.hadoop.security.UserGroupInformation
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
 
@@ -79,16 +80,6 @@ package object opentsdb {
 
   object TSDBClientManager {
 
-    var hbaseContext: HBaseContext = _
-
-    var keytab: Option[Broadcast[Array[Byte]]] = None
-
-    var principal: Option[String] = None
-
-    var tsdbTable: String = _
-
-    var tsdbUidTable: String = _
-
     @inline private def writeStringToFile(file: File, str: String): Unit = {
       val bw = new BufferedWriter(new FileWriter(file))
       bw.write(str)
@@ -104,74 +95,78 @@ package object opentsdb {
 
     var _tsdb: Option[Throwable Xor TSDB] = None
 
-    def tsdb: Throwable Xor TSDB = _tsdb.getOrElse {
-      _tsdb = Some(try {
-        val configuration: Configuration = {
-          val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-          val authenticationType = configuration.get("hbase.security.authentication")
-          if (authenticationType == null)
-            HBaseConfiguration.create()
-          else
-            configuration
+    var _config: Option[Config] = None
+
+    var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
+
+    def tsdb: Throwable Xor TSDB = try {
+      _tsdb.getOrElse {
+        try {
+          val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
+          val tsdb = Xor.right[Throwable, TSDB](new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available"))))
+          _tsdb = Some(tsdb)
+          tsdb
+        } catch {
+          case e: Throwable => Xor.left[Throwable, TSDB](e)
         }
-        val authenticationType = configuration.get("hbase.security.authentication")
-        val quorum = configuration.get("hbase.zookeeper.quorum")
-        val port = configuration.get("hbase.zookeeper.property.clientPort")
-        val asyncConfig = new shaded.org.hbase.async.Config()
-        val config = new Config(false)
-        config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-        config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-        config.overrideConfig("tsd.core.auto_create_metrics", "true")
-        config.disableCompactions()
-        asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
-        asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-        if (authenticationType == "kerberos") {
-          val keytabPath = s"$getCurrentDirectory/keytab"
-          val keytabFile = new File(keytabPath)
-          val byteArray = keytab.getOrElse(throw new Exception).value
-          Files.write(Paths.get(keytabPath), byteArray)
-          val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
-          val jaasConf =
-            s"""AsynchbaseClient {
-                |  com.sun.security.auth.module.Krb5LoginModule required
-                |  useTicketCache=false
-                |  useKeyTab=true
-                |  keyTab="$keytabPath"
-                |  principal="${principal.getOrElse(throw new Exception)}"
-                |  storeKey=true;
-                };
-            """.stripMargin
-          writeStringToFile(jaasFile, jaasConf)
-          System.setProperty(
-            "java.security.auth.login.config",
-            jaasFile.getAbsolutePath
-          )
-          configuration.set("hadoop.security.authentication", "kerberos")
-          asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
-          asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
-          asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
-          asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
-          asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-        }
-        val hbaseClient = new HBaseClient(asyncConfig)
-        Xor.right[Throwable, TSDB](new TSDB(hbaseClient, config))
-      } catch {
-        case e: Throwable => Xor.left[Throwable, TSDB](e)
-      })
-      _tsdb.getOrElse(throw new Exception)
+      }
     }
 
     def apply(
       keytab: Option[Broadcast[Array[Byte]]],
       principal: Option[String],
       hbaseContext: HBaseContext,
-      tsdbTable: String, tsdbUidTable: String
+      tsdbTable: String,
+      tsdbUidTable: String
     ): Unit = {
-      this.keytab = keytab
-      this.principal = principal
-      this.hbaseContext = hbaseContext
-      this.tsdbTable = tsdbTable
-      this.tsdbUidTable = tsdbUidTable
+      val configuration: Configuration = {
+        val configuration: Configuration = hbaseContext.broadcastedConf.value.value
+        val authenticationType = configuration.get("hbase.security.authentication")
+        if (authenticationType == null)
+          HBaseConfiguration.create()
+        else
+          configuration
+      }
+      val authenticationType = configuration.get("hbase.security.authentication")
+      val quorum = configuration.get("hbase.zookeeper.quorum")
+      val port = configuration.get("hbase.zookeeper.property.clientPort")
+      val asyncConfig = new shaded.org.hbase.async.Config()
+      val config = new Config(false)
+      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
+      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+      config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      config.disableCompactions()
+      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
+      asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
+      if (authenticationType == "kerberos") {
+        val keytabPath = s"$getCurrentDirectory/keytab"
+        val byteArray = keytab.getOrElse(throw new Exception("keytab data not available")).value
+        Files.write(Paths.get(keytabPath), byteArray)
+        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+        val jaasConf =
+          s"""AsynchbaseClient {
+              |  com.sun.security.auth.module.Krb5LoginModule required
+              |  useTicketCache=false
+              |  useKeyTab=true
+              |  keyTab="$keytabPath"
+              |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
+              |  storeKey=true;
+                };
+            """.stripMargin
+        writeStringToFile(jaasFile, jaasConf)
+        System.setProperty(
+          "java.security.auth.login.config",
+          jaasFile.getAbsolutePath
+        )
+        configuration.set("hadoop.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
+        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
+        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
+        asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
+      }
+      _config = Some(config)
+      _asyncConfig = Some(asyncConfig)
     }
 
   }
