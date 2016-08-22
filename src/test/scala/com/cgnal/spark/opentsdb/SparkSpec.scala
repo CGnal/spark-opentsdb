@@ -59,7 +59,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -71,7 +71,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -83,7 +83,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -95,7 +95,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(10)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
       println("------------")
 
@@ -107,7 +107,7 @@ class SparkSpec extends SparkBaseSpec {
 
         result.length must be(20)
 
-        result.foreach(p => println((simpleDateFormat.format(p.getAs[Timestamp](0)), p.getAs[Long](2))))
+        result.foreach(dp => println((simpleDateFormat.format(new Timestamp(dp.timestamp)), dp.value)))
       }
     }
   }
@@ -121,7 +121,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val result = ts.collect()
 
-      result.map(r => (r.getAs[Timestamp](0).getTime, r.getAs[Double](2))) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
+      result.map(dp => (dp.timestamp, dp.value)) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
     }
   }
 
@@ -140,7 +140,7 @@ class SparkSpec extends SparkBaseSpec {
 
       FileImporter.importFile(hBaseClient, tsdb, "data/opentsdb.input", skip_errors = false)
 
-      val df = openTSDBContext.loadDataFrame(sqlContext, "open", Map.empty[String, String], Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
+      val df = openTSDBContext.loadDataFrame("open", Map.empty[String, String], Some("06/06/2016 20:00"), Some("27/06/2016 17:00"))
 
       df.registerTempTable("open")
 
@@ -219,14 +219,14 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
       df.schema must be(
         StructType(
           Array(
             StructField("timestamp", TimestampType, nullable = false),
             StructField("metric", StringType, nullable = false),
-            StructField("value", FloatType, nullable = false),
+            StructField("value", DoubleType, nullable = false),
             StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )
@@ -248,12 +248,12 @@ class SparkSpec extends SparkBaseSpec {
         i <- 0 until 10
         ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         epoch = ts.getTime
-        point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+        point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
       } yield point
 
-      val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
+      val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
-      val stream = streamingContext.queueStream[(String, Long, Double, Map[String, String])](mutable.Queue(rdd))
+      val stream = streamingContext.queueStream[DataPoint[Double]](mutable.Queue(rdd))
 
       openTSDBContext.streamWrite(stream)
 
@@ -263,14 +263,14 @@ class SparkSpec extends SparkBaseSpec {
 
       val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-      val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
       df.schema must be(
         StructType(
           Array(
             StructField("timestamp", TimestampType, nullable = false),
             StructField("metric", StringType, nullable = false),
-            StructField("value", FloatType, nullable = false),
+            StructField("value", DoubleType, nullable = false),
             StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
           )
         )

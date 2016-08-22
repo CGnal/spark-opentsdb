@@ -21,9 +21,8 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.{ ConvertToFloat, OpenTSDBContext, _ }
+import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
@@ -83,8 +82,7 @@ object Main extends App {
 
   val sparkContext = new SparkContext(conf)
   val sqlContext = new SQLContext(sparkContext)
-  val hbaseContext = new HBaseContext(sparkContext, new Configuration())
-  val openTSDBContext = new OpenTSDBContext(sqlContext, hbaseContext)
+  val openTSDBContext = new OpenTSDBContext(sqlContext, new Configuration())
 
   openTSDBContext.keytab = args(1)
 
@@ -94,16 +92,16 @@ object Main extends App {
     i <- 0 until 10
     ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
     epoch = ts.getTime
-    point = ("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+    point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
-  val rdd = sparkContext.parallelize[(String, Long, Double, Map[String, String])](points)
+  val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
   openTSDBContext.write(rdd)
 
   val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
   simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-  val df = openTSDBContext.loadDataFrame(sqlContext, "mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"), conversionStrategy = ConvertToFloat)
+  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
   val result = df.collect()
 

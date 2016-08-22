@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import java.nio.file.{ Files, Paths }
 import java.util.{ Calendar, TimeZone }
 
+import cats.data.Xor
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.conf.Configuration
@@ -31,80 +32,92 @@ import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
-import shapeless.{ :+:, CNil, Coproduct }
-
-import scala.annotation.switch
-import scala.collection.mutable.ArrayBuffer
 
 package object opentsdb {
 
-  type Value = Byte :+: Short :+: Int :+: Long :+: Float :+: Double :+: CNil
-
-  implicit val writeForByte: (Iterator[(String, Long, Byte, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForShort: (Iterator[(String, Long, Short, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForInt: (Iterator[(String, Long, Int, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3.asInstanceOf[Long], record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
     })
   }
 
-  implicit val writeForLong: (Iterator[(String, Long, Long, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 
-  implicit val writeForFloat: (Iterator[(String, Long, Float, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 
-  implicit val writeForDouble: (Iterator[(String, Long, Double, Map[String, String])], TSDB) => Unit = (it, tsdb) => {
+  implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
     import collection.JavaConversions._
-    it.foreach(record => {
-      tsdb.addPoint(record._1, record._2, record._3, record._4)
+    it.foreach(dp => {
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
 
   object TSDBClientManager {
 
-    @transient lazy val log = org.apache.log4j.LogManager.getLogger(this.getClass.getName)
-
-    var hbaseContext: HBaseContext = _
-
-    var keytab: Option[Broadcast[Array[Byte]]] = None
-
-    var principal: Option[String] = None
-
-    var tsdbTable: String = _
-
-    var tsdbUidTable: String = _
-
-    private def writeStringToFile(file: File, str: String): Unit = {
+    @inline private def writeStringToFile(file: File, str: String): Unit = {
       val bw = new BufferedWriter(new FileWriter(file))
       bw.write(str)
       bw.close()
     }
 
-    def getCurrentDirectory = new java.io.File(".").getCanonicalPath
+    @inline private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
 
-    lazy val tsdb: TSDB = {
+    def shutdown() = {
+      _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
+      _tsdb = None
+    }
+
+    var _tsdb: Option[Throwable Xor TSDB] = None
+
+    var _config: Option[Config] = None
+
+    var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
+
+    def tsdb: Throwable Xor TSDB = try {
+      _tsdb.getOrElse {
+        try {
+          val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
+          val tsdb = Xor.right[Throwable, TSDB](new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available"))))
+          _tsdb = Some(tsdb)
+          tsdb
+        } catch {
+          case e: Throwable => Xor.left[Throwable, TSDB](e)
+        }
+      }
+    }
+
+    def apply(
+      keytab: Option[Broadcast[Array[Byte]]],
+      principal: Option[String],
+      hbaseContext: HBaseContext,
+      tsdbTable: String,
+      tsdbUidTable: String
+    ): Unit = {
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
         val authenticationType = configuration.get("hbase.security.authentication")
@@ -114,35 +127,6 @@ package object opentsdb {
           configuration
       }
       val authenticationType = configuration.get("hbase.security.authentication")
-      if (authenticationType == "kerberos") {
-        val keytabPath = s"$getCurrentDirectory/keytab"
-        val keytabFile = new File(keytabPath)
-        val byteArray = keytab.get.value
-        Files.write(Paths.get(keytabPath), byteArray)
-        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
-        val jaasConf =
-          s"""
-             |
-            |AsynchbaseClient {
-             |  com.sun.security.auth.module.Krb5LoginModule required
-             |  useTicketCache=false
-             |  useKeyTab=true
-             |  keyTab="$keytabPath"
-             |  principal="${principal.get}"
-             |  storeKey=true;
-             |};
-          """.stripMargin
-        writeStringToFile(jaasFile, jaasConf)
-        System.setProperty("java.security.auth.login.config", jaasFile.getAbsolutePath)
-        log.info(s"Kerberos Principal: ${principal.get}")
-        log.info(s"KeyTab Path: $keytabPath")
-        log.info(s"JAAS File Path: $jaasFile")
-        log.info(
-          s"""JAAS File:
-              |$jaasConf
-           """.stripMargin
-        )
-      }
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
       val asyncConfig = new shaded.org.hbase.async.Config()
@@ -150,10 +134,29 @@ package object opentsdb {
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
       config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      config.disableCompactions()
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-
       if (authenticationType == "kerberos") {
+        val keytabPath = s"$getCurrentDirectory/keytab"
+        val byteArray = keytab.getOrElse(throw new Exception("keytab data not available")).value
+        Files.write(Paths.get(keytabPath), byteArray)
+        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+        val jaasConf =
+          s"""AsynchbaseClient {
+              |  com.sun.security.auth.module.Krb5LoginModule required
+              |  useTicketCache=false
+              |  useKeyTab=true
+              |  keyTab="$keytabPath"
+              |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
+              |  storeKey=true;
+                };
+            """.stripMargin
+        writeStringToFile(jaasFile, jaasConf)
+        System.setProperty(
+          "java.security.auth.login.config",
+          jaasFile.getAbsolutePath
+        )
         configuration.set("hadoop.security.authentication", "kerberos")
         asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
         asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
@@ -161,23 +164,24 @@ package object opentsdb {
         asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
       }
-      val hbaseClient = new HBaseClient(asyncConfig)
-      new TSDB(hbaseClient, config)
-    }
-
-    def apply(keytab: Option[Broadcast[Array[Byte]]], principal: Option[String], hbaseContext: HBaseContext, tsdbTable: String, tsdbUidTable: String): Unit = {
-      this.keytab = keytab
-      this.principal = principal
-      this.hbaseContext = hbaseContext
-      this.tsdbTable = tsdbTable
-      this.tsdbUidTable = tsdbUidTable
+      _config = Some(config)
+      _asyncConfig = Some(asyncConfig)
     }
 
   }
 
+  private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
+    val scan = new Scan()
+    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
+    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
+    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
+    scan.setFilter(rowFilter)
+    scan
+  }
+
   private[opentsdb] def getMetricScan(
     tags: Map[String, String],
-    metricsUID: Array[Array[Byte]],
+    metricUID: Array[Byte],
     tagKUIDs: Map[String, Array[Byte]],
     tagVUIDs: Map[String, Array[Byte]],
     startdate: Option[String],
@@ -193,9 +197,9 @@ package object opentsdb {
       map(l => l._1 ++ l._2).toList.sorted(Ordering.by((_: Array[Byte]).toIterable))
     val scan = new Scan()
     val name = if (tagKV.nonEmpty)
-      String.format("^%s.*%s.*$", bytes2hex(metricsUID.last, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
+      String.format("^%s.*%s.*$", bytes2hex(metricUID, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
     else
-      String.format("^%s.+$", bytes2hex(metricsUID.last, "\\x"))
+      String.format("^%s.+$", bytes2hex(metricUID, "\\x"))
 
     val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
@@ -208,133 +212,19 @@ package object opentsdb {
     val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
 
     val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.get else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
+    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.getOrElse(throw new Exception) else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
 
     val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.get else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
+    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.getOrElse(throw new Exception) else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
 
     if (tagKV.nonEmpty) {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
     } else {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricsUID.last, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
+      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
     }
     scan
-  }
-
-  private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
-    val scan = new Scan()
-    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
-    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
-    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
-    scan.setFilter(rowFilter)
-    scan
-  }
-
-  //TODO: changes operations on binary strings to bits
-  private[opentsdb] def processQuantifierOld(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
-    //converting Byte Arrays to a Array of binary string
-    val q = quantifier.map({ v => Integer.toBinaryString(v & 255 | 256).substring(1) })
-    var i = 0
-    val out = new ArrayBuffer[(Long, Boolean, Int)]
-    while (i != q.length) {
-      var value: Long = -1
-      var isInteger = true
-      var valueLength = -1
-      var isQuantifierSizeTypeSmall = true
-      //If the 1st 4 bytes are in format "1111", the size of the column quantifier is 4 bytes. Else 2 bytes
-      if (q(i).startsWith("1111")) {
-        isQuantifierSizeTypeSmall = false
-      }
-
-      if (isQuantifierSizeTypeSmall) {
-        val v = q(i) + q(i + 1).substring(0, 4) //The 1st 12 bits represent the delta
-        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (seconds)
-        isInteger = q(i + 1).substring(4, 5) == "0" //The 13th bit represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = Integer.parseInt(q(i + 1).substring(5, 8), 2) //The last 3 bits represents the length of the value
-        i = i + 2
-      } else {
-        val v = q(i).substring(4, 8) + q(i + 1) + q(i + 2) + q(i + 3).substring(0, 2) //The first 4 bits represents the size, the next 22 bits hold the delta
-        value = Integer.parseInt(v, 2).toLong //convert the delta to Int (milliseconds -> seconds)
-        isInteger = q(i + 3).substring(4, 5) == "0" //The 29th bit represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = Integer.parseInt(q(i + 3).substring(5, 8), 2) //The last 3 bits represents the length of the value
-        i = i + 4
-      }
-      out += ((value, isInteger, valueLength + 1))
-    }
-    out.toArray
-  }
-
-  private[opentsdb] def processQuantifier(quantifier: Array[Byte]): Array[(Long, Boolean, Int)] = {
-    val out = new ArrayBuffer[(Long, Boolean, Int)]
-    var i = 0
-
-    while (i < quantifier.length) {
-      var value: Long = -1
-      var isInteger = true
-      var valueLength = -1
-
-      //The first byte starts with 0XF (in binary '1111')
-      val isQuantifierSizeTypeSmall = !((quantifier(i) & 0xF0) == 0xF0)
-      if (isQuantifierSizeTypeSmall) {
-        value = ((quantifier(i) & 0xFF) * 0x10).toLong +
-          ((quantifier(i + 1) >>> 4) & 0x0F) //The 1st 12 bits represent the delta
-        isInteger = (quantifier(i + 1) & 0x08) != 0x08 //The 13th bit (00001000 = 0x08) represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = quantifier(i + 1) & 0x07 //The last 3 bits (00000111 = 0x07) represents the length of the value
-
-        i = i + 2
-      } else {
-        value = ((quantifier(i) & 0x0F) * 0x40000).toLong +
-          ((quantifier(i + 1) & 0xFF) * 0x400).toLong +
-          ((quantifier(i + 2) & 0xFF) * 0x04).toLong +
-          ((quantifier(i + 3) >>> 6) & 0x03) //The first 4 bits represents the size, the next 22 bits hold the delta
-        isInteger = (quantifier(i + 3) & 0x08) != 0x08 //The 29th bit (00001000 = 0x08) represent the format of the value for the delta. 0=Integer, 1=Float
-        valueLength = quantifier(i + 3) & 0x07 //The last 3 bits (00000111 = 0x07) represents the length of the value
-
-        i = i + 4
-      }
-      out += ((value, isInteger, valueLength + 1))
-    }
-
-    out.toArray
-  }
-
-  private[opentsdb] def processValues(quantifier: Array[(Long, Boolean, Int)], values: Array[Byte]): Array[Value] = {
-    val out = new ArrayBuffer[Value]
-    var i = 0
-    var j = 0
-    while (j < quantifier.length) {
-      //Is the value represented as integer or float
-      val isInteger = quantifier(j)._2
-      //The number of Byte in which the value has been encoded
-      val valueSize = quantifier(j)._3
-      //Get the value for the current delta
-      val valueBytes = values.slice(i, i + valueSize)
-      val value = if (!isInteger) {
-        (valueSize: @switch) match {
-          case 4 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getFloat())
-          case 8 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getDouble())
-        }
-      } else {
-        (valueSize: @switch) match {
-          case 1 =>
-            Coproduct[Value](valueBytes(0))
-          case 2 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getShort().toInt)
-          case 4 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getInt())
-          case 8 =>
-            Coproduct[Value](ByteBuffer.wrap(valueBytes).getLong())
-        }
-      }
-      i += valueSize
-      j += 1
-      out += value
-    }
-    out.toArray
   }
 
   private def bytes2hex(bytes: Array[Byte], sep: String): String = {

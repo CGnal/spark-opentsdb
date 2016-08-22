@@ -31,6 +31,7 @@ scalacOptions ++= Seq(
   "-Yno-adapted-args",
   "-Ywarn-numeric-widen",
   "-Ywarn-value-discard",
+  "-Ywarn-dead-code",
   "-Xfuture"
 )
 
@@ -38,11 +39,11 @@ wartremoverErrors ++= Seq(
   Wart.Any,
   Wart.Any2StringAdd,
   Wart.EitherProjectionPartial,
-  //  Wart.OptionPartial,
+  Wart.OptionPartial,
   Wart.Product,
   Wart.Serializable,
-  Wart.ListOps,
-  Wart.Nothing
+  Wart.ListOps
+  //Wart.Nothing
 )
 
 val sparkVersion = "1.6.0-cdh5.7.1"
@@ -59,7 +60,7 @@ val openTSDBVersion = "2.2.0"
 
 val sparkTSVersion = "0.3.0"
 
-val shapelessVersion = "2.3.1"
+val catsVersion = "0.6.1"
 
 resolvers ++= Seq(
   Resolver.mavenLocal,
@@ -114,7 +115,7 @@ val assemblyDependencies = Seq(
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
-  "com.chuusai" %% "shapeless" % shapelessVersion % "compile",
+  "org.typelevel" %% "cats" % catsVersion % "compile",
   "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "compile"
 )
 
@@ -123,19 +124,20 @@ val hadoopClientExcludes =
     exclude("org.slf4j", "slf4j-api").
     exclude("javax.servlet", "servlet-api")
 
+val scope = "provided"
+
 libraryDependencies ++= Seq(
-  sparkExcludes("com.databricks" %% "spark-avro" % sparkAvroVersion % "provided"),
-  sparkExcludes("org.apache.spark" %% "spark-core" % sparkVersion % "provided"),
-  sparkExcludes("org.apache.spark" %% "spark-sql" % sparkVersion % "provided"),
-  sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % "provided"),
-  sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % "provided"),
-  sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-applications-distributedshell" % hadoopVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-server-web-proxy" % hadoopVersion % "provided"),
-  hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "provided")
+  sparkExcludes("org.apache.spark" %% "spark-core" % sparkVersion % scope),
+  sparkExcludes("org.apache.spark" %% "spark-sql" % sparkVersion % scope),
+  sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % scope),
+  sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % scope),
+  sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-applications-distributedshell" % hadoopVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-server-web-proxy" % hadoopVersion % scope),
+  hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % scope)
 ) ++ assemblyDependencies
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
@@ -200,7 +202,7 @@ lazy val projectAssembly = (project in file("assembly")).
         oldStrategy(x)
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
-    libraryDependencies ++= assemblyDependencies
+    libraryDependencies in assembly := assemblyDependencies
   ) dependsOn root settings (
   projectDependencies := {
     Seq(
