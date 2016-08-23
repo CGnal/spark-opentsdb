@@ -47,7 +47,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     hbaseUtil.startMiniCluster(1)
     val conf = new SparkConf().
-      setAppName("spark-cdh5-template-local-test").
+      setAppName("spark-opentsdb-local-test").
       setMaster("local").
       set("spark.io.compression.codec", "lzf")
     sparkContext = new SparkContext(conf)
