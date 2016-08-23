@@ -49,7 +49,6 @@ class SparkSpec extends SparkBaseSpec {
         tsdb.addPoint("mymetric", epoch, (i + 100).toLong, Map("key1" -> "value1", "key3" -> "value3")).joinUninterruptibly()
       }
 
-      // Default Date Format: dd/MM/yyyy HH:mm
       {
         val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
         simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))

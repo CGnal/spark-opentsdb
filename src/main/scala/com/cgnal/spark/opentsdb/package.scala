@@ -80,7 +80,7 @@ package object opentsdb {
     })
   }
 
-  @inline implicit def timeStampWrapper(ts: Timestamp) = new RichTimestamp(ts)
+  @inline implicit def timestampWrapper(ts: Timestamp) = new RichTimestamp(ts)
 
   object TSDBClientManager {
 
