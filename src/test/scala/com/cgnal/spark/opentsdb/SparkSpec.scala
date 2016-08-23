@@ -17,9 +17,11 @@
 package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
+import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.TimeZone
 
+import com.cloudera.sparkts.MillisecondFrequency
 import net.opentsdb.core.TSDB
 import net.opentsdb.tools.FileImporter
 import net.opentsdb.utils.Config
@@ -191,7 +193,6 @@ class SparkSpec extends SparkBaseSpec {
     }
   }
 
-  /*
   "Spark" must {
     "load timeseries from OpenTSDB into a Spark Timeseries RDD correctly" in {
 
@@ -209,8 +210,7 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
       val ts = openTSDBContext.loadTimeSeriesRDD(
-        simpleDateFormat.format(startDate),
-        simpleDateFormat.format(endDate),
+        startDate -> endDate,
         new MillisecondFrequency(1),
         List(
           "metric1" -> Map("key1" -> "value1"),
@@ -218,8 +218,7 @@ class SparkSpec extends SparkBaseSpec {
           "metric3" -> Map("key1" -> "value1"),
           "metric4" -> Map("key1" -> "value1"),
           "metric5" -> Map("key1" -> "value1")
-        ),
-        "yyyy-MM-ss mm-ss-SSS"
+        )
       )
 
       ts.findSeries("metric1").asInstanceOf[org.apache.spark.mllib.linalg.Vector].size must be(1000)
@@ -230,7 +229,6 @@ class SparkSpec extends SparkBaseSpec {
 
     }
   }
-  */
 
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB correctly" in {

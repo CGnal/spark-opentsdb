@@ -16,11 +16,11 @@
 
 package com.cgnal.spark
 
-import java.io.{BufferedWriter, File, FileWriter}
+import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.ByteBuffer
-import java.nio.file.{Files, Paths}
+import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
-import java.util.{Calendar, TimeZone}
+import java.util.{ Calendar, TimeZone }
 
 import cats.data.Xor
 import net.opentsdb.core.TSDB
@@ -29,7 +29,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
+import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
@@ -121,12 +121,12 @@ package object opentsdb {
     }
 
     def apply(
-               keytab: Option[Broadcast[Array[Byte]]],
-               principal: Option[String],
-               hbaseContext: HBaseContext,
-               tsdbTable: String,
-               tsdbUidTable: String
-             ): Unit = {
+      keytab: Option[Broadcast[Array[Byte]]],
+      principal: Option[String],
+      hbaseContext: HBaseContext,
+      tsdbTable: String,
+      tsdbUidTable: String
+    ): Unit = {
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
         val authenticationType = configuration.get("hbase.security.authentication")
@@ -193,12 +193,12 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
-                                       tags: Map[String, String],
-                                       metricUID: Array[Byte],
-                                       tagKUIDs: Map[String, Array[Byte]],
-                                       tagVUIDs: Map[String, Array[Byte]],
-                                       interval: Option[(Int, Int)]
-                                     ) = {
+    tags: Map[String, String],
+    metricUID: Array[Byte],
+    tagKUIDs: Map[String, Array[Byte]],
+    tagVUIDs: Map[String, Array[Byte]],
+    interval: Option[(Int, Int)]
+  ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))

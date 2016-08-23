@@ -19,8 +19,10 @@ package com.cgnal.spark.opentsdb
 import java.io.File
 import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
+import java.time.{ Instant, LocalDateTime, ZoneId, ZonedDateTime }
 import java.util
 
+import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.TableName
@@ -74,54 +76,46 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   def principal_=(principal: String) = principal_ = Some(principal)
 
-  /*
-   def loadTimeSeriesRDD(
-     startdate: String,
-     enddate: String,
-     frequency: Frequency,
-     metrics: List[(String, Map[String, String])],
-     dateFormat: String = this.dateFormat
-   ): TimeSeriesRDD[String] = {
+  def loadTimeSeriesRDD(
+    interval: Option[(Int, Int)],
+    frequency: Frequency,
+    metrics: List[(String, Map[String, String])]
+  ): TimeSeriesRDD[String] = {
 
-     val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
-     simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+    val startDateEpochInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._1.toLong * 1000).getTime
+    val endDateEpochInInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._2.toLong * 1000).getTime - 1
 
-     val startDateEpochInMillis: Long = simpleDateFormat.parse(startdate).getTime
-     val endDateEpochInInMillis: Long = simpleDateFormat.parse(enddate).getTime - 1
+    LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
 
-     LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
+    val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
+    val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
 
-     val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
-     val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
+    var index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC"))
+    index = index.atZone(ZoneId.of("UTC"))
 
-     var index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC"))
-     index = index.atZone(ZoneId.of("UTC"))
+    val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
+      m._1,
+      m._2,
+      interval
+    ))
 
-     val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
-       m._1,
-       m._2,
-       Some(startdate),
-       Some(enddate),
-       dateFormat
-     ))
+    val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
+    val otherDFs = dfs.drop(1)
 
-     val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
-     val otherDFs = dfs.drop(1)
+    val observations = if (otherDFs.isEmpty)
+      initDF
+    else
+      otherDFs.fold(initDF)((df1, df2) => df1.unionAll(df2))
 
-     val observations = if (otherDFs.isEmpty)
-       initDF
-     else
-       otherDFs.fold(initDF)((df1, df2) => df1.unionAll(df2))
+    TimeSeriesRDD.timeSeriesRDDFromObservations(
+      index,
+      observations,
+      "timestamp",
+      "metric",
+      "value"
+    )
+  }
 
-     TimeSeriesRDD.timeSeriesRDDFromObservations(
-       index,
-       observations,
-       "timestamp",
-       "metric",
-       "value"
-     )
-   }
-   */
   def loadDataFrame(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
