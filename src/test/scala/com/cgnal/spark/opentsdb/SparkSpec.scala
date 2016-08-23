@@ -148,17 +148,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB specifying only the metric name correctly" in {
 
-      val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-      val quorum = configuration.get("hbase.zookeeper.quorum")
-      val port = configuration.get("hbase.zookeeper.property.clientPort")
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", openTSDBContext.tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", openTSDBContext.tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      val hBaseClient = new HBaseClient(s"$quorum:$port")
-      val tsdb = new TSDB(hBaseClient, config)
-
-      FileImporter.importFile(hBaseClient, tsdb, "data/opentsdb.input", skip_errors = false)
+      FileImporter.importFile(hbaseAsyncClient, tsdb, "data/opentsdb.input", skip_errors = false)
 
       val tsStart = Timestamp.from(Instant.parse(s"2016-06-06T20:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-06-27T17:00:00.00Z"))
@@ -238,13 +228,10 @@ class SparkSpec extends SparkBaseSpec {
         tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
       }
 
-      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+      val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
+      val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-      val tsStart = (simpleDateFormat.parse("05/07/2016 10:00").getTime / 1000).toInt
-      val tsEnd = (simpleDateFormat.parse("05/07/2016 20:00").getTime / 1000).toInt
-
-      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some((tsStart, tsEnd)))
+      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
 
       df.schema must be(
         StructType(
@@ -286,13 +273,10 @@ class SparkSpec extends SparkBaseSpec {
 
       Thread.sleep(1000)
 
-      val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-      simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+      val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
+      val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-      val tsStart = (simpleDateFormat.parse("05/07/2016 10:00").getTime / 1000).toInt
-      val tsEnd = (simpleDateFormat.parse("05/07/2016 20:00").getTime / 1000).toInt
-
-      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some((tsStart, tsEnd)))
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
 
       df.schema must be(
         StructType(
