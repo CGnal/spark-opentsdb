@@ -16,10 +16,11 @@
 
 package com.cgnal.spark
 
-import java.io.{ BufferedWriter, File, FileWriter }
+import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.ByteBuffer
-import java.nio.file.{ Files, Paths }
-import java.util.{ Calendar, TimeZone }
+import java.nio.file.{Files, Paths}
+import java.sql.Timestamp
+import java.util.{Calendar, TimeZone}
 
 import cats.data.Xor
 import net.opentsdb.core.TSDB
@@ -28,11 +29,12 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
+import scala.language.implicitConversions
 
 package object opentsdb {
 
@@ -78,6 +80,8 @@ package object opentsdb {
     })
   }
 
+  @inline implicit def timeStampWrapper(ts: Timestamp) = new RichTimestamp(ts)
+
   object TSDBClientManager {
 
     @transient lazy val log = Logger.getLogger(getClass.getName)
@@ -117,12 +121,12 @@ package object opentsdb {
     }
 
     def apply(
-      keytab: Option[Broadcast[Array[Byte]]],
-      principal: Option[String],
-      hbaseContext: HBaseContext,
-      tsdbTable: String,
-      tsdbUidTable: String
-    ): Unit = {
+               keytab: Option[Broadcast[Array[Byte]]],
+               principal: Option[String],
+               hbaseContext: HBaseContext,
+               tsdbTable: String,
+               tsdbUidTable: String
+             ): Unit = {
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
         val authenticationType = configuration.get("hbase.security.authentication")
@@ -189,14 +193,12 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
-    tags: Map[String, String],
-    metricUID: Array[Byte],
-    tagKUIDs: Map[String, Array[Byte]],
-    tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String],
-    enddate: Option[String],
-    dateFormat: String
-  ) = {
+                                       tags: Map[String, String],
+                                       metricUID: Array[Byte],
+                                       tagKUIDs: Map[String, Array[Byte]],
+                                       tagVUIDs: Map[String, Array[Byte]],
+                                       interval: Option[(Int, Int)]
+                                     ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
@@ -214,17 +216,19 @@ package object opentsdb {
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
     scan.setFilter(rowFilter)
 
-    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
-    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime
-    val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
+    val minDate = (new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime.getTime / 1000).toInt
+    val maxDate = (new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime.getTime / 1000).toInt
 
     val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.getOrElse(throw new Exception) else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
-
     val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.getOrElse(throw new Exception) else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
+
+    interval.fold({
+      stDateBuffer.putInt(minDate)
+      endDateBuffer.putInt(maxDate)
+    })(interval => {
+      stDateBuffer.putInt(interval._1)
+      endDateBuffer.putInt(interval._2)
+    })
 
     if (tagKV.nonEmpty) {
       scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))

@@ -101,11 +101,11 @@ object Main extends App {
 
   val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
   simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
+  //val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
 
-  val result = df.collect()
+  //val result = df.collect()
 
-  result.foreach(println(_))
+  //result.foreach(println(_))
 
   sparkContext.stop()
 }
