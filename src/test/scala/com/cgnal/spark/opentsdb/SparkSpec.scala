@@ -144,7 +144,7 @@ class SparkSpec extends SparkBaseSpec {
 
       df.registerTempTable("open")
 
-      val out = sqlContext.sql("select tags['symbol'], timestamp, value from open where tags['symbol'] = 'AAPL' sort by(timestamp)")
+      val out = sqlContext.sql("select tags['symbol'], timestamp, value from open where tags['symbol'] = 'AAPL'")
 
       val values1 = out.map(_.getAs[Double](2)).take(5625) //.collect() //TODO this test fails with collect the, is it a consequence of running inside a test?
 

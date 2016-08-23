@@ -19,12 +19,12 @@ package com.cgnal.spark.opentsdb
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
+import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.streaming.{ Milliseconds, StreamingContext }
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.streaming.{Milliseconds, StreamingContext}
+import org.apache.spark.{SparkConf, SparkContext}
+import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
 import shaded.org.hbase.async.HBaseClient
-import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
@@ -48,7 +48,8 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     hbaseUtil.startMiniCluster(1)
     val conf = new SparkConf().
       setAppName("spark-cdh5-template-local-test").
-      setMaster("local")
+      setMaster("local").
+      set("spark.io.compression.codec", "lzf")
     sparkContext = new SparkContext(conf)
     streamingContext = new StreamingContext(sparkContext, Milliseconds(200))
     hbaseContext = new HBaseContext(sparkContext, hbaseUtil.getConfiguration)
