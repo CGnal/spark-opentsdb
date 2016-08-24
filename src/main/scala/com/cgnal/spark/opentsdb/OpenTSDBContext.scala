@@ -77,7 +77,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def principal_=(principal: String) = principal_ = Some(principal)
 
   def loadTimeSeriesRDD(
-    interval: Option[(Int, Int)],
+    interval: Option[(Long, Long)],
     frequency: Frequency,
     metrics: List[(String, Map[String, String])]
   ): TimeSeriesRDD[String] = {
@@ -119,7 +119,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def loadDataFrame(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
-    interval: Option[(Int, Int)] = None
+    interval: Option[(Long, Long)] = None
   ): DataFrame = {
     val schema = StructType(
       Array(
@@ -154,7 +154,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def load(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
-    interval: Option[(Int, Int)] = None,
+    interval: Option[(Long, Long)] = None,
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[DataPoint[_ <: AnyVal]] = {
 
@@ -187,7 +187,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
-        val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _, conversionStrategy)))
+        val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _, interval, conversionStrategy)))
 
         override def hasNext =
           if (!i.hasNext) {
@@ -204,7 +204,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
 
-  private def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB, conversionStrategy: ConversionStrategy): Iterator[DataPoint[_ <: AnyVal]] = {
+  private def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB, interval: Option[(Long, Long)], conversionStrategy: ConversionStrategy): Iterator[DataPoint[_ <: AnyVal]] = {
     log.trace("processing row")
     val key = row._1.get()
     val metric = Internal.metricName(tsdb, key)
@@ -221,13 +221,21 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         if (cell == null) {
           throw new IllegalDataException("Unable to parse row: " + kv)
         }
-        dps += (conversionStrategy match {
-          case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-          case NoConversion => if (cell.isInteger)
-            DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+        val ts = cell.absoluteTimestamp(baseTime)
+        val isInTheInterval = interval.fold(true)(
+          interval => if (Internal.inMilliseconds(cell.qualifier()))
+            ts >= interval._1 * 1000 && ts < interval._2 * 1000
           else
-            DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-        })
+            ts >= interval._1 && ts < interval._2
+        )
+        if (isInTheInterval)
+          dps += (conversionStrategy match {
+            case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+            case NoConversion => if (cell.isInteger)
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+            else
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+          })
       } else {
         // compacted column
         log.trace("processing compacted row")
@@ -239,13 +247,21 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
             throw new IllegalDataException(Bytes.toStringBinary(key), e);
         }
         for (cell <- cells) {
-          dps += (conversionStrategy match {
-            case ConvertToDouble => DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-            case NoConversion => if (cell.isInteger)
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+          val ts = cell.absoluteTimestamp(baseTime)
+          val isInTheInterval = interval.fold(true)(
+            interval => if (Internal.inMilliseconds(cell.qualifier()))
+              ts >= interval._1 * 1000 && ts < interval._2 * 1000
             else
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
-          })
+              ts >= interval._1 && ts < interval._2
+          )
+          if (isInTheInterval)
+            dps += (conversionStrategy match {
+              case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+              case NoConversion => if (cell.isInteger)
+                DataPoint(metric, ts, cell.parseValue().longValue(), tags)
+              else
+                DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+            })
         }
         log.trace(s"processed ${cells.length} cells")
       }

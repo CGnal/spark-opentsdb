@@ -130,14 +130,19 @@ class SparkSpec extends SparkBaseSpec {
 
   "Spark" must {
     "load a timeseries with milliseconds granularity correctly" in {
-      for (i <- 0 until 10)
-        tsdb.addPoint("anothermetric", i.toLong, (i - 10).toFloat, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
+      val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z")).getTime
+      val tsEnd = tsStart + 2000
 
-      val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), conversionStrategy = ConvertToDouble)
+      for (i <- tsStart until tsEnd)
+        tsdb.addPoint("anothermetric", i.toLong, (i - tsStart).toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+
+      val ts = openTSDBContext.load("anothermetric", Map("key1" -> "value1", "key2" -> "value2"), Some((tsStart / 1000, tsStart / 1000 + 1)), conversionStrategy = ConvertToDouble)
 
       val result = ts.collect()
 
-      result.map(dp => (dp.timestamp, dp.value)) must be((0 until 10).map(i => (i.toLong, (i - 10).toDouble)))
+      result.length must be(1000)
+
+      result.map(dp => (dp.timestamp, dp.value)) must be((tsStart until tsStart + 1000).map(i => (i, (i - tsStart).toDouble)))
     }
   }
 

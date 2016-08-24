@@ -19,11 +19,11 @@ package com.cgnal.spark.opentsdb
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.hadoop.hbase.{HBaseTestingUtility, TableName}
+import org.apache.hadoop.hbase.{ HBaseTestingUtility, TableName }
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.streaming.{Milliseconds, StreamingContext}
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpec}
+import org.apache.spark.streaming.{ Milliseconds, StreamingContext }
+import org.apache.spark.{ SparkConf, SparkContext }
+import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 import shaded.org.hbase.async.HBaseClient
 
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {

@@ -197,7 +197,7 @@ package object opentsdb {
     metricUID: Array[Byte],
     tagKUIDs: Map[String, Array[Byte]],
     tagVUIDs: Map[String, Array[Byte]],
-    interval: Option[(Int, Int)]
+    interval: Option[(Long, Long)]
   ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
@@ -226,8 +226,8 @@ package object opentsdb {
       stDateBuffer.putInt(minDate)
       endDateBuffer.putInt(maxDate)
     })(interval => {
-      stDateBuffer.putInt(interval._1)
-      endDateBuffer.putInt(interval._2)
+      stDateBuffer.putInt(interval._1.toInt)
+      endDateBuffer.putInt(interval._2.toInt)
     })
 
     if (tagKV.nonEmpty) {

@@ -20,10 +20,10 @@ import java.io.File
 import java.sql.Timestamp
 import java.time.Instant
 
-import com.cgnal.spark.opentsdb.{OpenTSDBContext, _}
+import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{ SparkConf, SparkContext }
 
 /*
 spark-submit --executor-memory 1200M \
