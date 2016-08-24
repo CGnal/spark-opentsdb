@@ -22,12 +22,8 @@ import java.time.Instant
 import java.util.TimeZone
 
 import com.cloudera.sparkts.MillisecondFrequency
-import net.opentsdb.core.TSDB
 import net.opentsdb.tools.FileImporter
-import net.opentsdb.utils.Config
-import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.types._
-import shaded.org.hbase.async.HBaseClient
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
