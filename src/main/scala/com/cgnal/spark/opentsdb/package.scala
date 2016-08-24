@@ -19,6 +19,7 @@ package com.cgnal.spark
 import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.ByteBuffer
 import java.nio.file.{ Files, Paths }
+import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
 import cats.data.Xor
@@ -33,6 +34,7 @@ import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
+import scala.language.implicitConversions
 
 package object opentsdb {
 
@@ -77,6 +79,8 @@ package object opentsdb {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
     })
   }
+
+  @inline implicit def timestampWrapper(ts: Timestamp) = new RichTimestamp(ts)
 
   object TSDBClientManager {
 
@@ -193,9 +197,7 @@ package object opentsdb {
     metricUID: Array[Byte],
     tagKUIDs: Map[String, Array[Byte]],
     tagVUIDs: Map[String, Array[Byte]],
-    startdate: Option[String],
-    enddate: Option[String],
-    dateFormat: String
+    interval: Option[(Int, Int)]
   ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
@@ -214,17 +216,19 @@ package object opentsdb {
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
     scan.setFilter(rowFilter)
 
-    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
-    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    val minDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime
-    val maxDate = new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime
+    val minDate = (new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(1970, 0, 1).setTimeOfDay(0, 0, 0).build().getTime.getTime / 1000).toInt
+    val maxDate = (new Calendar.Builder().setTimeZone(TimeZone.getTimeZone("UTC")).setDate(2099, 11, 31).setTimeOfDay(23, 59, 0).build().getTime.getTime / 1000).toInt
 
     val stDateBuffer = ByteBuffer.allocate(4)
-    stDateBuffer.putInt((simpleDateFormat.parse(if (startdate.isDefined) startdate.getOrElse(throw new Exception) else simpleDateFormat.format(minDate)).getTime / 1000).toInt)
-
     val endDateBuffer = ByteBuffer.allocate(4)
-    endDateBuffer.putInt((simpleDateFormat.parse(if (enddate.isDefined) enddate.getOrElse(throw new Exception) else simpleDateFormat.format(maxDate)).getTime / 1000).toInt)
+
+    interval.fold({
+      stDateBuffer.putInt(minDate)
+      endDateBuffer.putInt(maxDate)
+    })(interval => {
+      stDateBuffer.putInt(interval._1)
+      endDateBuffer.putInt(interval._2)
+    })
 
     if (tagKV.nonEmpty) {
       scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))

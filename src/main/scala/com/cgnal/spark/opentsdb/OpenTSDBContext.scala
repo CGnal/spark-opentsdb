@@ -19,9 +19,8 @@ package com.cgnal.spark.opentsdb
 import java.io.File
 import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
-import java.time._
+import java.time.{ Instant, LocalDateTime, ZoneId, ZonedDateTime }
 import java.util
-import java.util.TimeZone
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
@@ -45,7 +44,7 @@ import scala.language.reflectiveCalls
 
 case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
-class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration, dateFormat: String = "dd/MM/yyyy HH:mm") extends Serializable {
+class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration) extends Serializable {
 
   @transient lazy val log = Logger.getLogger(getClass.getName)
 
@@ -78,18 +77,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def principal_=(principal: String) = principal_ = Some(principal)
 
   def loadTimeSeriesRDD(
-    startdate: String,
-    enddate: String,
+    interval: Option[(Int, Int)],
     frequency: Frequency,
-    metrics: List[(String, Map[String, String])],
-    dateFormat: String = this.dateFormat
+    metrics: List[(String, Map[String, String])]
   ): TimeSeriesRDD[String] = {
 
-    val simpleDateFormat = new java.text.SimpleDateFormat(dateFormat)
-    simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    val startDateEpochInMillis: Long = simpleDateFormat.parse(startdate).getTime
-    val endDateEpochInInMillis: Long = simpleDateFormat.parse(enddate).getTime - 1
+    val startDateEpochInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._1.toLong * 1000).getTime
+    val endDateEpochInInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._2.toLong * 1000).getTime - 1
 
     LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
 
@@ -102,9 +96,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
       m._1,
       m._2,
-      Some(startdate),
-      Some(enddate),
-      dateFormat
+      interval
     ))
 
     val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
@@ -127,9 +119,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def loadDataFrame(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
-    startdate: Option[String] = None,
-    enddate: Option[String] = None,
-    dateFormat: String = this.dateFormat
+    interval: Option[(Int, Int)] = None
   ): DataFrame = {
     val schema = StructType(
       Array(
@@ -140,7 +130,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
     )
 
-    val rowRDD = load(metricName, tags, startdate, enddate, dateFormat, ConvertToDouble).mapPartitions[Row](
+    val rowRDD = load(metricName, tags, interval, ConvertToDouble).mapPartitions[Row](
       iterator => {
         TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
         TSDBClientManager.tsdb.fold(throw _, tsdb => {
@@ -164,9 +154,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def load(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
-    startdate: Option[String] = None,
-    enddate: Option[String] = None,
-    dateFormat: String = this.dateFormat,
+    interval: Option[(Int, Int)] = None,
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[DataPoint[_ <: AnyVal]] = {
 
@@ -191,9 +179,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       metricsUID.last,
       tagKUIDs,
       tagVUIDs,
-      startdate,
-      enddate,
-      dateFormat
+      interval
     )
 
     val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]

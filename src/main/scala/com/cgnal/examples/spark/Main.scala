@@ -19,12 +19,11 @@ package com.cgnal.examples.spark
 import java.io.File
 import java.sql.Timestamp
 import java.time.Instant
-import java.util.TimeZone
 
-import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
+import com.cgnal.spark.opentsdb.{OpenTSDBContext, _}
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.{SparkConf, SparkContext}
 
 /*
 spark-submit --executor-memory 1200M \
@@ -99,9 +98,9 @@ object Main extends App {
 
   openTSDBContext.write(rdd)
 
-  val simpleDateFormat = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
-  simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
-  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some("05/07/2016 10:00"), Some("05/07/2016 20:00"))
+  val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
+  val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
+  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
 
   val result = df.collect()
 
