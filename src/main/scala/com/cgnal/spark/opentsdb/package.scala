@@ -293,11 +293,4 @@ package object opentsdb {
     }
   }
 
-  implicit class configurationWrapper(configuration: Configuration) {
-
-    import collection.JavaConversions._
-
-    def toMap: Map[String, String] = configuration.map(e => (s"hbase_configuration.${e.getKey}", e.getValue)).toMap
-  }
-
 }

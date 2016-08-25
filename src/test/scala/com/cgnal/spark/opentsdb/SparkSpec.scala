@@ -253,24 +253,26 @@ class SparkSpec extends SparkBaseSpec {
 
     }
   }
-  /*
+
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB using DefaultSource correctly" in {
+
+      DefaultSource.configuration = Some(hbaseUtil.getConfiguration)
 
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
-        tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2")).joinUninterruptibly()
+        tsdb.addPoint("mymetric", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2"))
       }
 
-      val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z")).getTime / 1000
+      val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T09:00:00.00Z")).getTime / 1000
       val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
 
       val df = sqlContext.read.options(Map(
-        "opentsdb.metric" -> "mymetric1",
+        "opentsdb.metric" -> "mymetric",
         "opentsdb.tags" -> "key->value1,key2->value2",
         "opentsdb.interval" -> s"$tsStart:$tsEnd"
-      ) ++ hbaseUtil.getConfiguration.toMap).opentsdb
+      )).opentsdb
 
       df.schema must be(
         StructType(
@@ -290,10 +292,12 @@ class SparkSpec extends SparkBaseSpec {
       result.foreach(println(_))
 
     }
-  }*/
+  }
 
   "Spark" must {
     "save timeseries points using DefaultSource correctly" in {
+
+      DefaultSource.configuration = Some(hbaseUtil.getConfiguration)
 
       val points = for {
         i <- 0 until 10
@@ -304,7 +308,7 @@ class SparkSpec extends SparkBaseSpec {
 
       val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
-      rdd.toDF(sqlContext).write.options(hbaseUtil.getConfiguration.toMap).mode("append").opentsdb
+      rdd.toDF(sqlContext).write.options(Map.empty[String, String]).mode("append").opentsdb
 
       val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))

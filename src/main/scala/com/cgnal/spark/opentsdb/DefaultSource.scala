@@ -38,14 +38,14 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val tags = parameters.get(TAGS).fold(Map.empty[String, String])(
       _.split(",").map(tk => {
-      val p = tk.split("->")
-      (p(0), p(1))
+      val p = tk.trim.split("->")
+      (p(0).trim, p(1).trim)
     }).toMap
     )
 
     val interval = parameters.get(INTERVAL).fold(None: Option[(Long, Long)])(
       interval => {
-        val a = interval.split(":").map(_.toLong)
+        val a = interval.trim.split(":").map(_.trim.toLong)
         Some((a(0), a(1)))
       }
     )
@@ -54,17 +54,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val principal = parameters.get(PRINCIPAL)
 
-    val configuration = if (parameters.count(_._1.startsWith("hbase_configuration.")) > 0) {
-      val configuration = new Configuration(false)
-      parameters.filter(_._1.startsWith("hbase_configuration.")).foreach {
-        p =>
-          configuration.set(p._1.substring(20), p._2)
-      }
-      Some(configuration)
-    } else
-      None
-
-    val openTSDBContext = new OpenTSDBContext(sqlContext, configuration)
+    val openTSDBContext = new OpenTSDBContext(sqlContext, DefaultSource.configuration)
 
     keytab.foreach(openTSDBContext.keytab = _)
 
@@ -104,7 +94,7 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
 
   override def buildScan(): RDD[Row] =
     openTSDBContext.load(
-      metric.getOrElse(throw new IllegalArgumentException(s"metric name must be specified")),
+      metric.getOrElse(throw new IllegalArgumentException(s"metric name must be specified")).trim,
       tags,
       interval,
       ConvertToDouble
@@ -118,4 +108,8 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
           )
       }
 
+}
+
+object DefaultSource {
+  var configuration: Option[Configuration] = None
 }
