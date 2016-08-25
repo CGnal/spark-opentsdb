@@ -178,7 +178,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
-        val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _, interval, conversionStrategy)))
+        val i = iterator.map(row => process(row, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly")), interval, conversionStrategy))
 
         override def hasNext =
           if (!i.hasNext) {
@@ -265,7 +265,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      TSDBClientManager.tsdb.fold(throw _, writeFunc(
+      writeFunc(
         new Iterator[DataPoint[T]] {
           override def hasNext =
             if (!it.hasNext) {
@@ -276,8 +276,8 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               it.hasNext
 
           override def next() = it.next()
-        }, _
-      ))
+        }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+      )
     })
   }
 
@@ -292,7 +292,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     ))
     timeseries.foreachPartition(it => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-      TSDBClientManager.tsdb.fold(throw _, writeFunc(
+      writeFunc(
         new Iterator[DataPoint[Double]] {
           override def hasNext =
             if (!it.hasNext) {
@@ -311,8 +311,8 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               row.getAs[Map[String, String]]("tags")
             )
           }
-        }, _
-      ))
+        }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+      )
     })
 
   }
@@ -323,7 +323,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         timeseries foreachPartition {
           it =>
             TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-            TSDBClientManager.tsdb.fold(throw _, writeFunc(
+            writeFunc(
               new Iterator[DataPoint[T]] {
                 override def hasNext =
                   if (!it.hasNext) {
@@ -334,8 +334,8 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
                     it.hasNext
 
                 override def next() = it.next()
-              }, _
-            ))
+              }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+            )
         }
     }
   }

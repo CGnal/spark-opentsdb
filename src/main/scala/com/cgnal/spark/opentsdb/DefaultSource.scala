@@ -99,14 +99,14 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
       interval,
       ConvertToDouble
     ).map[Row] {
-        dp =>
-          Row(
-            new Timestamp(dp.timestamp),
-            dp.metric,
-            dp.value.asInstanceOf[Double],
-            dp.tags
-          )
-      }
+      dp =>
+        Row(
+          new Timestamp(dp.timestamp),
+          dp.metric,
+          dp.value.asInstanceOf[Double],
+          dp.tags
+        )
+    }
 
 }
 

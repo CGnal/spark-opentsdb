@@ -22,7 +22,6 @@ import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
-import cats.data.Xor
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.conf.Configuration
@@ -39,6 +38,7 @@ import org.apache.spark.sql.types._
 import shaded.org.hbase.async.HBaseClient
 
 import scala.language.implicitConversions
+import scala.util.{ Success, Try }
 
 package object opentsdb {
 
@@ -100,27 +100,23 @@ package object opentsdb {
 
     def shutdown() = {
       log.trace("About to shutdown the TSDB client instance")
-      _tsdb.foreach(_.fold(throw _, _.shutdown().joinUninterruptibly()))
+      _tsdb.foreach(_.map(_.shutdown().joinUninterruptibly()))
       _tsdb = None
     }
 
-    var _tsdb: Option[Throwable Xor TSDB] = None
+    var _tsdb: Option[Try[TSDB]] = None
 
     var _config: Option[Config] = None
 
     var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
 
-    def tsdb: Throwable Xor TSDB = try {
-      _tsdb.getOrElse {
-        try {
-          log.trace("Creating the TSDB client instance")
-          val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
-          val tsdb = Xor.right[Throwable, TSDB](new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available"))))
-          _tsdb = Some(tsdb)
-          tsdb
-        } catch {
-          case e: Throwable => Xor.left[Throwable, TSDB](e)
-        }
+    def tsdb: Try[TSDB] = _tsdb.getOrElse {
+      Try {
+        log.trace("Creating the TSDB client instance")
+        val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
+        val tsdb = new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available")))
+        _tsdb = Some(Success(tsdb))
+        tsdb
       }
     }
 
@@ -270,7 +266,7 @@ package object opentsdb {
     def opentsdb(): DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
-  implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
+  implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
     def opentsdb() = writer.format("com.cgnal.spark.opentsdb").save
   }
 
