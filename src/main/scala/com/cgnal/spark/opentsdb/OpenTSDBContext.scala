@@ -48,7 +48,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   @transient lazy val log = Logger.getLogger(getClass.getName)
 
-  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.fold(new Configuration())(identity))
+  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
 
   var tsdbTable = "tsdb"
 

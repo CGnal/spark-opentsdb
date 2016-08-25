@@ -20,7 +20,8 @@ import java.io.File
 import java.sql.Timestamp
 import java.time.Instant
 
-import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
+import com.cgnal.spark.opentsdb._
+import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
@@ -90,10 +91,12 @@ object Main extends App {
 
   val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
+  val configuration = new Configuration()
+
   rdd.toDF.write.options(Map(
     "opentsdb.keytab" -> args(1),
     "opentsdb.principal" -> args(2)
-  )).mode("append").opentsdb
+  ) ++ configuration.toMap).mode("append").opentsdb
 
   val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z")).getTime / 1000
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
@@ -104,7 +107,7 @@ object Main extends App {
     "opentsdb.interval" -> s"$tsStart:$tsEnd",
     "opentsdb.keytab" -> args(1),
     "opentsdb.principal" -> args(2)
-  )).opentsdb
+  ) ++ configuration.toMap).opentsdb
 
   val result = df.collect()
 

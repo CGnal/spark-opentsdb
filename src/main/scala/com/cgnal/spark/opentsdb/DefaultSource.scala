@@ -18,6 +18,7 @@ package com.cgnal.spark.opentsdb
 
 import java.sql.Timestamp
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
@@ -53,7 +54,17 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val principal = parameters.get(PRINCIPAL)
 
-    val openTSDBContext = new OpenTSDBContext(sqlContext)
+    val configuration = if (parameters.count(_._1.startsWith("hbase_configuration.")) > 0) {
+      val configuration = new Configuration(false)
+      parameters.filter(_._1.startsWith("hbase_configuration.")).foreach {
+        p =>
+          configuration.set(p._1.substring(20), p._2)
+      }
+      Some(configuration)
+    } else
+      None
+
+    val openTSDBContext = new OpenTSDBContext(sqlContext, configuration)
 
     keytab.foreach(openTSDBContext.keytab = _)
 

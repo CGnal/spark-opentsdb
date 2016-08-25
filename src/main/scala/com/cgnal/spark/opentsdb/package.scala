@@ -274,7 +274,7 @@ package object opentsdb {
     def opentsdb() = writer.format("com.cgnal.spark.opentsdb").save
   }
 
-  implicit class rddWrapper(rdd: RDD[DataPoint[Double]])(implicit sqlContext: SQLContext) {
+  implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
     val schema = StructType(
       Array(
         StructField("timestamp", TimestampType, nullable = false),
@@ -284,13 +284,20 @@ package object opentsdb {
       )
     )
 
-    def toDF = {
+    def toDF(implicit sqlContext: SQLContext) = {
       val df = rdd.map {
         dp =>
           Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)
       }
       sqlContext.createDataFrame(df, schema)
     }
+  }
+
+  implicit class configurationWrapper(configuration: Configuration) {
+
+    import collection.JavaConversions._
+
+    def toMap: Map[String, String] = configuration.map(e => (s"hbase_configuration.${e.getKey}", e.getValue)).toMap
   }
 
 }
