@@ -44,11 +44,11 @@ import scala.language.reflectiveCalls
 
 case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
-class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Configuration) extends Serializable {
+class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Option[Configuration] = None) extends Serializable {
 
   @transient lazy val log = Logger.getLogger(getClass.getName)
 
-  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration)
+  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.fold(new Configuration())(identity))
 
   var tsdbTable = "tsdb"
 
@@ -60,9 +60,9 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   var tagvWidth: Byte = 3
 
-  private var keytab_ : Option[Broadcast[Array[Byte]]] = None
+  protected var keytab_ : Option[Broadcast[Array[Byte]]] = None
 
-  private var principal_ : Option[String] = None
+  protected var principal_ : Option[String] = None
 
   def keytab = keytab_.getOrElse(throw new Exception("keytab has not been defined"))
 
@@ -130,24 +130,15 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
     )
 
-    val rowRDD = load(metricName, tags, interval, ConvertToDouble).mapPartitions[Row](
-      iterator => {
-        TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
-        TSDBClientManager.tsdb.fold(throw _, tsdb => {
-          val result = iterator.map {
-            dp =>
-              Row(
-                new Timestamp(dp.timestamp),
-                dp.metric,
-                dp.value.asInstanceOf[Double],
-                dp.tags
-              )
-          }
-          result
-        })
-      }, preservesPartitioning = true
-    )
-
+    val rowRDD = load(metricName, tags, interval, ConvertToDouble).map[Row] {
+      dp =>
+        Row(
+          new Timestamp(dp.timestamp),
+          dp.metric,
+          dp.value.asInstanceOf[Double],
+          dp.tags
+        )
+    }
     sqlContext.createDataFrame(rowRDD, schema)
   }
 
@@ -184,7 +175,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
 
-    val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](iterator => {
+    val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
       TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
         val i = iterator.map(row => TSDBClientManager.tsdb.fold(throw _, process(row, _, interval, conversionStrategy)))
@@ -199,7 +190,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
         override def next() = i.next()
       }
-    })
+    }, preservesPartitioning = true)
 
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
@@ -288,6 +279,42 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         }, _
       ))
     })
+  }
+
+  def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB) => Unit): Unit = {
+    assert(timeseries.schema == StructType(
+      Array(
+        StructField("timestamp", TimestampType, nullable = false),
+        StructField("metric", StringType, nullable = false),
+        StructField("value", DoubleType, nullable = false),
+        StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
+      )
+    ))
+    timeseries.foreachPartition(it => {
+      TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager.tsdb.fold(throw _, writeFunc(
+        new Iterator[DataPoint[Double]] {
+          override def hasNext =
+            if (!it.hasNext) {
+              log.trace("iterating done, about to shutdown the TSDB client instance")
+              TSDBClientManager.shutdown()
+              false
+            } else
+              it.hasNext
+
+          override def next() = {
+            val row = it.next()
+            DataPoint(
+              row.getAs[String]("metric"),
+              row.getAs[Timestamp]("timestamp").getTime,
+              row.getAs[Double]("value"),
+              row.getAs[Map[String, String]]("tags")
+            )
+          }
+        }, _
+      ))
+    })
+
   }
 
   def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {

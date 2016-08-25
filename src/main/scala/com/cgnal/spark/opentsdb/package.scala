@@ -33,7 +33,11 @@ import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql._
+import org.apache.spark.sql.types._
 import shaded.org.hbase.async.HBaseClient
+
 import scala.language.implicitConversions
 
 package object opentsdb {
@@ -260,6 +264,33 @@ package object opentsdb {
       }
     }
     b
+  }
+
+  implicit class OpenTSDBDataFrameReader(reader: DataFrameReader) {
+    def opentsdb(): DataFrame = reader.format("com.cgnal.spark.opentsdb").load
+  }
+
+  implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
+    def opentsdb() = writer.format("com.cgnal.spark.opentsdb").save
+  }
+
+  implicit class rddWrapper(rdd: RDD[DataPoint[Double]])(implicit sqlContext: SQLContext) {
+    val schema = StructType(
+      Array(
+        StructField("timestamp", TimestampType, nullable = false),
+        StructField("metric", StringType, nullable = false),
+        StructField("value", DoubleType, nullable = false),
+        StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
+      )
+    )
+
+    def toDF = {
+      val df = rdd.map {
+        dp =>
+          Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)
+      }
+      sqlContext.createDataFrame(df, schema)
+    }
   }
 
 }

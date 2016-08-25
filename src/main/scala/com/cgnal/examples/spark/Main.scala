@@ -21,7 +21,6 @@ import java.sql.Timestamp
 import java.time.Instant
 
 import com.cgnal.spark.opentsdb.{ OpenTSDBContext, _ }
-import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
@@ -80,12 +79,7 @@ object Main extends App {
   }
 
   val sparkContext = new SparkContext(conf)
-  val sqlContext = new SQLContext(sparkContext)
-  val openTSDBContext = new OpenTSDBContext(sqlContext, new Configuration())
-
-  openTSDBContext.keytab = args(1)
-
-  openTSDBContext.principal = args(2)
+  implicit val sqlContext = new SQLContext(sparkContext)
 
   val points = for {
     i <- 0 until 10
@@ -96,11 +90,21 @@ object Main extends App {
 
   val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
-  openTSDBContext.write(rdd)
+  rdd.toDF.write.options(Map(
+    "opentsdb.keytab" -> args(1),
+    "opentsdb.principal" -> args(2)
+  )).mode("append").opentsdb
 
-  val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
-  val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
-  val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+  val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z")).getTime / 1000
+  val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
+
+  val df = sqlContext.read.options(Map(
+    "opentsdb.metric" -> "mymetric1",
+    "opentsdb.tags" -> "key->value1,key2->value2",
+    "opentsdb.interval" -> s"$tsStart:$tsEnd",
+    "opentsdb.keytab" -> args(1),
+    "opentsdb.principal" -> args(2)
+  )).opentsdb
 
   val result = df.collect()
 
