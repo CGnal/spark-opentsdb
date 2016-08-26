@@ -1,4 +1,9 @@
-import de.heikoseeberger.sbtheader.license.Apache2_0
+/*
+ * Copyright 2016 CGnal S.p.A.
+ *
+ */
+
+import de.heikoseeberger.sbtheader.HeaderPattern
 import sbt.{ExclusionRule, _}
 
 organization := "com.cgnal.spark"
@@ -175,6 +180,26 @@ val hadoopHBaseExcludes =
     excludeAll(ExclusionRule(organization = "org.mortbay.jetty")).
     excludeAll(ExclusionRule(organization = "javax.servlet"))
 
+val header1 = (
+  HeaderPattern.cStyleBlockComment,
+  """|/*
+    | * Copyright 2016 CGnal S.p.A.
+    | *
+    | */
+    |
+    |""".stripMargin
+  )
+
+val header2 = (
+  HeaderPattern.hashLineComment,
+  """|#
+    |# Copyright 2016 CGnal S.p.A.
+    |#
+    |#
+    |
+    |""".stripMargin
+  )
+
 lazy val root = (project in file(".")).
   configs(IntegrationTest).
   settings(Defaults.itSettings: _*).
@@ -201,10 +226,10 @@ lazy val root = (project in file(".")).
       "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "it,test"
     ),
     headers := Map(
-      "sbt" -> Apache2_0("2016", "CGnal S.p.A."),
-      "scala" -> Apache2_0("2016", "CGnal S.p.A."),
-      "conf" -> Apache2_0("2016", "CGnal S.p.A.", "#"),
-      "properties" -> Apache2_0("2016", "CGnal S.p.A.", "#")
+      "sbt" -> header1,
+      "scala" -> header1,
+      "conf" -> header2,
+      "properties" -> header2
     )
   ).
   enablePlugins(AutomateHeaderPlugin).
