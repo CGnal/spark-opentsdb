@@ -36,14 +36,37 @@ scalacOptions ++= Seq(
 )
 
 wartremoverErrors ++= Seq(
-  //Wart.Any,
+  Wart.Any,
   Wart.Any2StringAdd,
+  //Wart.AsInstanceOf,
+  //Wart.DefaultArguments,
   Wart.EitherProjectionPartial,
+  Wart.Enumeration,
+  //Wart.Equals,
+  Wart.ExplicitImplicitTypes,
+  Wart.FinalCaseClass,
+  Wart.FinalVal,
+  Wart.ImplicitConversion,
+  Wart.IsInstanceOf,
+  Wart.JavaConversions,
+  Wart.LeakingSealed,
+  Wart.ListOps,
+  Wart.MutableDataStructures,
+  //Wart.NoNeedForMonad,
+  //Wart.NonUnitStatements,
+  //Wart.Nothing,
+  //Wart.Null,
+  Wart.Option2Iterable,
   Wart.OptionPartial,
+  //Wart.Overloading,
   Wart.Product,
+  Wart.Return,
   Wart.Serializable,
-  Wart.ListOps
-  //Wart.Nothing
+  //Wart.Throw,
+  Wart.ToString,
+  Wart.TryPartial,
+  Wart.Var,
+  Wart.While
 )
 
 val sparkVersion = "1.6.0-cdh5.7.1"
@@ -206,7 +229,7 @@ lazy val projectAssembly = (project in file("assembly")).
       (projectID in root).value.excludeAll(ExclusionRule(organization = "org.apache.spark")))
   })
 
-val buildShadedLibraries= taskKey[Unit]("Build the shaded library")
+val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 
 buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
 

@@ -38,12 +38,13 @@ import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.language.{ postfixOps, reflectiveCalls }
 
-case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
+final case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
+@SuppressWarnings(Array("org.wartremover.warts.Var"))
 object OpenTSDBContext {
 
   var tsdbTable = "tsdb"
@@ -62,16 +63,22 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   var tsdbTable = OpenTSDBContext.tsdbTable
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   var tsdbUidTable = OpenTSDBContext.tsdbUidTable
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   var saltWidth: Int = OpenTSDBContext.saltWidth
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   var saltBuckets: Int = OpenTSDBContext.saltBuckets
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   protected var keytab_ : Option[Broadcast[Array[Byte]]] = None
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   protected var principal_ : Option[String] = None
 
   def keytab = keytab_.getOrElse(throw new Exception("keytab has not been defined"))
@@ -100,8 +107,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
     val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
 
-    var index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC"))
-    index = index.atZone(ZoneId.of("UTC"))
+    val index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC")).atZone(ZoneId.of("UTC"))
 
     val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
       m._1,
@@ -245,8 +251,8 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val key = row._1.get()
     val metric = Internal.metricName(tsdb, key)
     val baseTime = Internal.baseTime(tsdb, key)
-    val tags = Internal.getTags(tsdb, key).toMap
-    var dps = new ListBuffer[DataPoint[_ <: AnyVal]]
+    val tags = Internal.getTags(tsdb, key).asScala
+    val dps = new ListBuffer[DataPoint[_ <: AnyVal]]
     row._2.rawCells().foreach[Unit](cell => {
       val family = util.Arrays.copyOfRange(cell.getFamilyArray, cell.getFamilyOffset, cell.getFamilyOffset + cell.getFamilyLength)
       val qualifier = util.Arrays.copyOfRange(cell.getQualifierArray, cell.getQualifierOffset, cell.getQualifierOffset + cell.getQualifierLength)
@@ -266,23 +272,23 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         )
         if (isInTheInterval)
           dps += (conversionStrategy match {
-            case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+            case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags.toMap)
             case NoConversion => if (cell.isInteger)
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags)
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().longValue(), tags.toMap)
             else
-              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags)
+              DataPoint(metric, cell.absoluteTimestamp(baseTime), cell.parseValue().doubleValue(), tags.toMap)
           })
       } else {
         // compacted column
         log.trace("processing compacted row")
         val cells = new ListBuffer[Internal.Cell]
         try {
-          cells ++= Internal.extractDataPoints(kv)
+          cells ++= Internal.extractDataPoints(kv).asScala
         } catch {
           case e: IllegalDataException =>
-            throw new IllegalDataException(Bytes.toStringBinary(key), e);
+            throw new IllegalDataException(Bytes.toStringBinary(key), e)
         }
-        for (cell <- cells) {
+        cells.foreach[Unit](cell => {
           val ts = cell.absoluteTimestamp(baseTime)
           val isInTheInterval = interval.fold(true)(
             interval => if (Internal.inMilliseconds(cell.qualifier()))
@@ -292,13 +298,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
           )
           if (isInTheInterval)
             dps += (conversionStrategy match {
-              case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+              case ConvertToDouble => DataPoint(metric, ts, cell.parseValue().doubleValue(), tags.toMap)
               case NoConversion => if (cell.isInteger)
-                DataPoint(metric, ts, cell.parseValue().longValue(), tags)
+                DataPoint(metric, ts, cell.parseValue().longValue(), tags.toMap)
               else
-                DataPoint(metric, ts, cell.parseValue().doubleValue(), tags)
+                DataPoint(metric, ts, cell.parseValue().doubleValue(), tags.toMap)
             })
-        }
+          ()
+        })
         log.trace(s"processed ${cells.length} cells")
       }
       ()

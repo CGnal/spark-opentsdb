@@ -26,6 +26,7 @@ import org.apache.spark.{ SparkConf, SparkContext }
 import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 import shaded.org.hbase.async.HBaseClient
 
+@SuppressWarnings(Array("org.wartremover.warts.Var"))
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   val hbaseUtil = new HBaseTestingUtility()

@@ -37,54 +37,47 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import shaded.org.hbase.async.HBaseClient
 
+import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 import scala.util.{ Success, Try }
 
 package object opentsdb {
 
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
-    import collection.JavaConversions._
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags)
+      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
-
-  @inline implicit def timestampWrapper(ts: Timestamp) = new RichTimestamp(ts)
 
   object TSDBClientManager {
 
@@ -104,10 +97,13 @@ package object opentsdb {
       _tsdb = None
     }
 
+    @SuppressWarnings(Array("org.wartremover.warts.Var"))
     var _tsdb: Option[Try[TSDB]] = None
 
+    @SuppressWarnings(Array("org.wartremover.warts.Var"))
     var _config: Option[Config] = None
 
+    @SuppressWarnings(Array("org.wartremover.warts.Var"))
     var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
 
     def tsdb: Try[TSDB] = _tsdb.getOrElse {
@@ -266,6 +262,7 @@ package object opentsdb {
     sep + bytes.map("%02x".format(_)).mkString(sep)
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While"))
   private def hexStringToByteArray(s: String): Array[Byte] = {
     val sn = s.replace("\\x", "")
     val b: Array[Byte] = new Array[Byte](sn.length / 2)
@@ -285,11 +282,11 @@ package object opentsdb {
   }
 
   implicit class OpenTSDBDataFrameReader(reader: DataFrameReader) {
-    def opentsdb(): DataFrame = reader.format("com.cgnal.spark.opentsdb").load
+    def opentsdb: DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
   implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
-    def opentsdb() = writer.format("com.cgnal.spark.opentsdb").save
+    def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
@@ -309,6 +306,13 @@ package object opentsdb {
       }
       sqlContext.createDataFrame(df, schema)
     }
+  }
+
+  implicit class RichTimestamp(val self: Timestamp) extends AnyVal {
+    def -> (end: Timestamp): Option[(Long, Long)] = Some((
+      self.getTime / 1000,
+      end.getTime / 1000
+    ))
   }
 
 }

@@ -110,6 +110,7 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
 
 }
 
+@SuppressWarnings(Array("org.wartremover.warts.Var"))
 object DefaultSource {
   var configuration: Option[Configuration] = None
 }

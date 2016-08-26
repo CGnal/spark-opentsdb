@@ -79,7 +79,7 @@ object Main extends App {
   }
 
   val sparkContext = new SparkContext(conf)
-  implicit val sqlContext = new SQLContext(sparkContext)
+  implicit val sqlContext: SQLContext = new SQLContext(sparkContext)
 
   val points = for {
     i <- 0 until 10
