@@ -125,7 +125,9 @@ package object opentsdb {
       principal: Option[String],
       hbaseContext: HBaseContext,
       tsdbTable: String,
-      tsdbUidTable: String
+      tsdbUidTable: String,
+      saltWidth: Int,
+      saltBuckets: Int
     ): Unit = {
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
@@ -143,6 +145,10 @@ package object opentsdb {
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
       config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      if (saltWidth > 0) {
+        config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
+        config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)
+      }
       config.disableCompactions()
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
@@ -193,6 +199,7 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
+    bucket: Byte,
     tags: Map[String, String],
     metricUID: Array[Byte],
     tagKUIDs: Map[String, Array[Byte]],
@@ -207,11 +214,17 @@ package object opentsdb {
       map(k => (k._2, tagVUIDs(tags(k._1)))).
       map(l => l._1 ++ l._2).toList.sorted(Ordering.by((_: Array[Byte]).toIterable))
     val scan = new Scan()
-    val name = if (tagKV.nonEmpty)
-      String.format("^%s.*%s.*$", bytes2hex(metricUID, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
-    else
-      String.format("^%s.+$", bytes2hex(metricUID, "\\x"))
-
+    val name = if (bucket >= 0) {
+      if (tagKV.nonEmpty)
+        String.format("^%s%s.*%s.*$", bytes2hex(Array(bucket), "\\x"), bytes2hex(metricUID, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
+      else
+        String.format("^%s%s.+$", bytes2hex(Array(bucket), "\\x"), bytes2hex(metricUID, "\\x"))
+    } else {
+      if (tagKV.nonEmpty)
+        String.format("^%s.*%s.*$", bytes2hex(metricUID, "\\x"), bytes2hex(tagKV.flatten.toArray, "\\x"))
+      else
+        String.format("^%s.+$", bytes2hex(metricUID, "\\x"))
+    }
     val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
     val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
     scan.setFilter(rowFilter)
@@ -229,13 +242,22 @@ package object opentsdb {
       stDateBuffer.putInt(interval._1.toInt)
       endDateBuffer.putInt(interval._2.toInt)
     })
-
-    if (tagKV.nonEmpty) {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+    if (bucket >= 0) {
+      if (tagKV.nonEmpty) {
+        scan.setStartRow(hexStringToByteArray(bytes2hex(Array(bucket), "\\x") + bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+        scan.setStopRow(hexStringToByteArray(bytes2hex(Array(bucket), "\\x") + bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      } else {
+        scan.setStartRow(hexStringToByteArray(bytes2hex(Array(bucket), "\\x") + bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
+        scan.setStopRow(hexStringToByteArray(bytes2hex(Array(bucket), "\\x") + bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+      }
     } else {
-      scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
-      scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+      if (tagKV.nonEmpty) {
+        scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+        scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x") + bytes2hex(tagKV.flatten.toArray, "\\x")))
+      } else {
+        scan.setStartRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(stDateBuffer.array(), "\\x")))
+        scan.setStopRow(hexStringToByteArray(bytes2hex(metricUID, "\\x") + bytes2hex(endDateBuffer.array(), "\\x")))
+      }
     }
     scan
   }

@@ -45,6 +45,8 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   var tsdb: TSDB = _
 
   override def beforeAll(): Unit = {
+    OpenTSDBContext.saltWidth = 1
+    OpenTSDBContext.saltBuckets = 2
     hbaseUtil.startMiniCluster(1)
     val conf = new SparkConf().
       setAppName("spark-opentsdb-local-test").
@@ -66,6 +68,10 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     config.overrideConfig("tsd.storage.hbase.data_table", "tsdb")
     config.overrideConfig("tsd.storage.hbase.uid_table", "tsdb-uid")
     config.overrideConfig("tsd.core.auto_create_metrics", "true")
+    if (openTSDBContext.saltWidth > 0) {
+      config.overrideConfig("tsd.storage.salt.width", openTSDBContext.saltWidth.toString)
+      config.overrideConfig("tsd.storage.salt.buckets", openTSDBContext.saltBuckets.toString)
+    }
     config.disableCompactions()
     tsdb = new TSDB(hbaseAsyncClient, config)
   }

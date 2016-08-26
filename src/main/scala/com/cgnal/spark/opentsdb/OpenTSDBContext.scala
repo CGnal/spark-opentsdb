@@ -40,9 +40,21 @@ import shaded.org.hbase.async.KeyValue
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable.ListBuffer
-import scala.language.reflectiveCalls
+import scala.language.{ postfixOps, reflectiveCalls }
 
 case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
+
+object OpenTSDBContext {
+
+  var tsdbTable = "tsdb"
+
+  var tsdbUidTable = "tsdb-uid"
+
+  var saltWidth: Int = 0
+
+  var saltBuckets: Int = 0
+
+}
 
 class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Option[Configuration] = None) extends Serializable {
 
@@ -50,15 +62,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
 
-  var tsdbTable = "tsdb"
+  var tsdbTable = OpenTSDBContext.tsdbTable
 
-  var tsdbUidTable = "tsdb-uid"
+  var tsdbUidTable = OpenTSDBContext.tsdbUidTable
 
-  var metricWidth: Byte = 3
+  var saltWidth: Int = OpenTSDBContext.saltWidth
 
-  var tagkWidth: Byte = 3
-
-  var tagvWidth: Byte = 3
+  var saltBuckets: Int = OpenTSDBContext.saltBuckets
 
   protected var keytab_ : Option[Broadcast[Array[Byte]]] = None
 
@@ -165,18 +175,53 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       throw new Exception(s"Metric not found: $metricName")
     log.info("Loading metric and tags uids: done")
 
-    val metricScan = getMetricScan(
-      tags,
-      metricsUID.last,
-      tagKUIDs,
-      tagVUIDs,
-      interval
-    )
+    val rows = if (saltWidth == 0) {
+      log.trace("computing hbase rows without salting")
+      val metricScan = getMetricScan(
+        -1: Byte,
+        tags,
+        metricsUID.last,
+        tagKUIDs,
+        tagVUIDs,
+        interval
+      )
+      hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    } else {
+      assert(saltWidth == 1)
+      assert(saltBuckets >= 1)
+      log.trace("computing hbase rows with salting")
+      val rdds = (0 until saltBuckets) map {
+        bucket =>
+          val metricScan = getMetricScan(
+            bucket.toByte,
+            tags,
+            metricsUID.last,
+            tagKUIDs,
+            tagVUIDs,
+            interval
+          )
+          hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+      } toList
 
-    val rows = hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+      val initRDD = rdds.headOption.getOrElse(throw new Exception("There must be at least one RDD"))
+      val otherRDDs = rdds.drop(1)
+
+      if (otherRDDs.isEmpty)
+        initRDD
+      else
+        otherRDDs.fold(initRDD)((rdd1, rdd2) => rdd1.union(rdd2))
+    }
 
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
-      TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager(
+        keytab = keytab_,
+        principal = principal_,
+        hbaseContext = hbaseContext,
+        tsdbTable = tsdbTable,
+        tsdbUidTable = tsdbUidTable,
+        saltWidth = saltWidth,
+        saltBuckets = saltBuckets
+      )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
         val i = iterator.map(row => process(row, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly")), interval, conversionStrategy))
 
@@ -264,7 +309,15 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
-      TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager(
+        keytab = keytab_,
+        principal = principal_,
+        hbaseContext = hbaseContext,
+        tsdbTable = tsdbTable,
+        tsdbUidTable = tsdbUidTable,
+        saltWidth = saltWidth,
+        saltBuckets = saltBuckets
+      )
       writeFunc(
         new Iterator[DataPoint[T]] {
           override def hasNext =
@@ -291,7 +344,15 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
     ))
     timeseries.foreachPartition(it => {
-      TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+      TSDBClientManager(
+        keytab = keytab_,
+        principal = principal_,
+        hbaseContext = hbaseContext,
+        tsdbTable = tsdbTable,
+        tsdbUidTable = tsdbUidTable,
+        saltWidth = saltWidth,
+        saltBuckets = saltBuckets
+      )
       writeFunc(
         new Iterator[DataPoint[Double]] {
           override def hasNext =
@@ -322,7 +383,15 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       timeseries =>
         timeseries foreachPartition {
           it =>
-            TSDBClientManager(keytab = keytab_, principal = principal_, hbaseContext = hbaseContext, tsdbTable = tsdbTable, tsdbUidTable = tsdbUidTable)
+            TSDBClientManager(
+              keytab = keytab_,
+              principal = principal_,
+              hbaseContext = hbaseContext,
+              tsdbTable = tsdbTable,
+              tsdbUidTable = tsdbUidTable,
+              saltWidth = saltWidth,
+              saltBuckets = saltBuckets
+            )
             writeFunc(
               new Iterator[DataPoint[T]] {
                 override def hasNext =
