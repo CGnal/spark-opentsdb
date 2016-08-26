@@ -82,7 +82,7 @@ val hbaseVersion = "1.2.0-cdh5.7.1"
 
 val sparkAvroVersion = "1.1.0-cdh5.7.1"
 
-val scalaTestVersion = "2.2.6"
+val scalaTestVersion = "3.0.0"
 
 val openTSDBVersion = "2.2.0"
 
