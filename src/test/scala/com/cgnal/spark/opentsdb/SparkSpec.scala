@@ -14,7 +14,7 @@ import com.cloudera.sparkts.MillisecondFrequency
 import net.opentsdb.tools.FileImporter
 import org.apache.spark.sql.types._
 
-import scala.collection.JavaConverters._
+import scala.collection.convert.decorateAsJava._
 import scala.collection.mutable
 
 class SparkSpec extends SparkBaseSpec {

@@ -27,61 +27,114 @@ import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
 import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
-import scala.collection.JavaConverters._
+import scala.collection.convert.decorateAsScala._
 import scala.collection.mutable.ListBuffer
 import scala.language.{ postfixOps, reflectiveCalls }
 
+/**
+ * A class representing a single datapoint
+ *
+ * @param metric    the metric name the data point belongs to
+ * @param timestamp the data point's timestamp
+ * @param value     tha value
+ * @param tags      the metric tags
+ * @tparam T the actual value type
+ */
 final case class DataPoint[T <: AnyVal](metric: String, timestamp: Long, value: T, tags: Map[String, String]) extends Serializable
 
+/**
+ * This companion object is used for carrying important TSDB configuration properties
+ */
 @SuppressWarnings(Array("org.wartremover.warts.Var"))
 object OpenTSDBContext {
 
+  /**
+   * The HBase table containing the metrics
+   */
   var tsdbTable = "tsdb"
 
+  /**
+   * The HBase table containing the various IDs for tags amnd metric names
+   */
   var tsdbUidTable = "tsdb-uid"
 
+  /**
+   * The salting prefix width, currently it can be 0=NO SALTING or 1
+   */
   var saltWidth: Int = 0
 
+  /**
+   * The number of salting buckets
+   */
   var saltBuckets: Int = 0
 
 }
 
+/**
+ * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
+ *
+ * @param sqlContext    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
+ * @param configuration The HBase configuration that can be optionally passed, if None it will be automatically retrieved from
+ *                      the classpath
+ */
 class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Option[Configuration] = None) extends Serializable {
 
-  @transient lazy val log = Logger.getLogger(getClass.getName)
+  @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  var tsdbTable = OpenTSDBContext.tsdbTable
+  private val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  var tsdbUidTable = OpenTSDBContext.tsdbUidTable
+  private[opentsdb] var tsdbTable = OpenTSDBContext.tsdbTable
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  var saltWidth: Int = OpenTSDBContext.saltWidth
+  private[opentsdb] var tsdbUidTable = OpenTSDBContext.tsdbUidTable
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  var saltBuckets: Int = OpenTSDBContext.saltBuckets
+  private[opentsdb] var saltWidth: Int = OpenTSDBContext.saltWidth
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  protected var keytab_ : Option[Broadcast[Array[Byte]]] = None
+  private[opentsdb] var saltBuckets: Int = OpenTSDBContext.saltBuckets
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  protected var principal_ : Option[String] = None
+  private var keytab_ : Option[Broadcast[Array[Byte]]] = None
 
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private var principal_ : Option[String] = None
+
+  /**
+   * @return the keytab path for accessing the secure HBase
+   */
   def keytab = keytab_.getOrElse(throw new Exception("keytab has not been defined"))
 
+  /**
+   * @param keytab the path of the file containing the keytab
+   */
   def keytab_=(keytab: String) = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
     keytab_ = Some(sqlContext.sparkContext.broadcast(byteArray))
   }
 
+  /**
+   * @return the Kerberos principal
+   */
   def principal = principal_.getOrElse(throw new Exception("principal has not been defined"))
 
+  /**
+   * @param principal the kerberos principal to be used in combination with the keytab
+   */
   def principal_=(principal: String) = principal_ = Some(principal)
 
+  /**
+   * It loads multiple OpenTSDB timeseries into a `TimeSeriesRDD`
+   *
+   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                 the second long is the end of the interval (exclusive).
+   *                 This method will retrieve all the metrics included into this interval.
+   * @param frequency the interval frequency, see `Frequency`
+   * @param metrics a list of pair metric name, tags
+   * @return a `TimeSeriesRDD` instance
+   */
   def loadTimeSeriesRDD(
     interval: Option[(Long, Long)],
     frequency: Frequency,
@@ -121,6 +174,16 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     )
   }
 
+  /**
+   * This method loads a time series from OpenTSDB as a `DataFrame`
+   *
+   * @param metricName the metric name
+   * @param tags the metric tags
+   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                 the second long is the end of the interval (exclusive).
+   *                 This method will retrieve all the metrics included into this interval.
+   * @return the data frame
+   */
   def loadDataFrame(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
@@ -147,6 +210,18 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     sqlContext.createDataFrame(rowRDD, schema)
   }
 
+  /**
+   * This method loads a time series from OpenTSDB as a `RDD`[`DataPoint`]
+   *
+   * @param metricName the metric name
+   * @param tags the metric tags
+   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                 the second long is the end of the interval (exclusive).
+   *                 This method will retrieve all the metrics included into this interval.
+   * @param conversionStrategy if `NoConversion` the `DataPoint`'s value type will the actual one, as retrieved from the storage,
+   *                           otherwise, if `ConvertToDouble` the value will be converted to Double
+   * @return the `RDD`
+   */
   def load(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
@@ -303,6 +378,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     dps.iterator
   }
 
+  /**
+   * It writes a `RDD`[`DataPoint`] back to OpenTSDB
+   *
+   * @param timeseries the `RDD` of `DataPoint`s to be stored
+   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @tparam T the actual type of the `DataPoint`'s value
+   */
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager(
@@ -330,6 +412,12 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     })
   }
 
+  /**
+   * It writes a `DataFrame` back to OpenTSDB
+   *
+   * @param timeseries the data frame to be stored
+   * @param writeFunc the implicit writefunc to be used for a specific value type
+   */
   def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB) => Unit): Unit = {
     assert(timeseries.schema == StructType(
       Array(
@@ -374,6 +462,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
   }
 
+  /**
+   * It writes a `DStream`[`DataPoint`] back to OpenTSDB
+   *
+   * @param dstream the distributed stream
+   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @tparam T the actual type of the `DataPoint`'s value
+   */
   def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     dstream foreachRDD {
       timeseries =>

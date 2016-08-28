@@ -26,48 +26,69 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import shaded.org.hbase.async.HBaseClient
 
-import scala.collection.JavaConverters._
+import scala.collection.convert.decorateAsJava._
 import scala.language.implicitConversions
 import scala.util.{ Success, Try }
 
 package object opentsdb {
 
+  /**
+   *
+   */
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
+  /**
+   *
+   */
   object TSDBClientManager {
 
     @transient lazy val log = Logger.getLogger(getClass.getName)
@@ -95,6 +116,10 @@ package object opentsdb {
     @SuppressWarnings(Array("org.wartremover.warts.Var"))
     var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
 
+    /**
+     *
+     * @return
+     */
     def tsdb: Try[TSDB] = _tsdb.getOrElse {
       Try {
         log.trace("Creating the TSDB client instance")
@@ -105,6 +130,16 @@ package object opentsdb {
       }
     }
 
+    /**
+     *
+     * @param keytab
+     * @param principal
+     * @param hbaseContext
+     * @param tsdbTable
+     * @param tsdbUidTable
+     * @param saltWidth
+     * @param saltBuckets
+     */
     def apply(
       keytab: Option[Broadcast[Array[Byte]]],
       principal: Option[String],
@@ -174,6 +209,12 @@ package object opentsdb {
 
   }
 
+  /**
+   *
+   * @param metricName
+   * @param tags
+   * @return
+   */
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
     val scan = new Scan()
     val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
@@ -183,6 +224,16 @@ package object opentsdb {
     scan
   }
 
+  /**
+   *
+   * @param bucket
+   * @param tags
+   * @param metricUID
+   * @param tagKUIDs
+   * @param tagVUIDs
+   * @param interval
+   * @return
+   */
   private[opentsdb] def getMetricScan(
     bucket: Byte,
     tags: Map[String, String],
@@ -270,33 +321,53 @@ package object opentsdb {
     b
   }
 
+  /**
+   *
+   * @param reader
+   */
   implicit class OpenTSDBDataFrameReader(reader: DataFrameReader) {
     def opentsdb: DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
+  /**
+   *
+   * @param writer
+   */
   implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
     def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
+  /**
+   *
+   * @param rdd
+   */
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
-    val schema = StructType(
-      Array(
-        StructField("timestamp", TimestampType, nullable = false),
-        StructField("metric", StringType, nullable = false),
-        StructField("value", DoubleType, nullable = false),
-        StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
-      )
-    )
 
+    /**
+     *
+     * @param sqlContext
+     * @return
+     */
     def toDF(implicit sqlContext: SQLContext) = {
       val df = rdd.map {
         dp =>
           Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)
       }
-      sqlContext.createDataFrame(df, schema)
+      sqlContext.createDataFrame(df, StructType(
+        Array(
+          StructField("timestamp", TimestampType, nullable = false),
+          StructField("metric", StringType, nullable = false),
+          StructField("value", DoubleType, nullable = false),
+          StructField("tags", DataTypes.createMapType(StringType, StringType), nullable = false)
+        )
+      ))
     }
   }
 
+  /**
+   *
+   * @param self
+   */
   implicit class RichTimestamp(val self: Timestamp) extends AnyVal {
     def -> (end: Timestamp): Option[(Long, Long)] = Some((
       self.getTime / 1000,

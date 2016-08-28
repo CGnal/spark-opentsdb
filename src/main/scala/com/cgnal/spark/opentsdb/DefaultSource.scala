@@ -13,6 +13,9 @@ import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{ DataFrame, Row, SQLContext, SaveMode }
 
+/**
+ *
+ */
 class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
   override def createRelation(sqlContext: SQLContext, parameters: Map[String, String]): BaseRelation = {
@@ -99,6 +102,9 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
 
 }
 
+/**
+ *
+ */
 @SuppressWarnings(Array("org.wartremover.warts.Var"))
 object DefaultSource {
   var configuration: Option[Configuration] = None
