@@ -37,7 +37,8 @@ scalacOptions ++= Seq(
   "-Ywarn-numeric-widen",
   "-Ywarn-value-discard",
   "-Ywarn-dead-code",
-  "-Xfuture"
+  "-Xfuture",
+  "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 
 wartremoverErrors ++= Seq(
