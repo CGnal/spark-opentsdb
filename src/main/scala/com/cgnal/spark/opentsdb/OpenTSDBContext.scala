@@ -308,7 +308,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
         override def next() = i.next()
       }
-    }, preservesPartitioning = false)
+    }, preservesPartitioning = true)
 
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
