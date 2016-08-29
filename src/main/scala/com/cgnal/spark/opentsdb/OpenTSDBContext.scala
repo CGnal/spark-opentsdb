@@ -283,7 +283,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     }
 
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
-      TSDBClientManager(
+      TSDBClientManager.init(
         keytab = keytab_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -387,7 +387,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    */
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
-      TSDBClientManager(
+      TSDBClientManager.init(
         keytab = keytab_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -428,7 +428,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
     ))
     timeseries.foreachPartition(it => {
-      TSDBClientManager(
+      TSDBClientManager.init(
         keytab = keytab_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -473,7 +473,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       timeseries =>
         timeseries foreachPartition {
           it =>
-            TSDBClientManager(
+            TSDBClientManager.init(
               keytab = keytab_,
               principal = principal_,
               hbaseContext = hbaseContext,

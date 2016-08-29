@@ -24,7 +24,7 @@ import scala.util.{ Success, Try }
  */
 object TSDBClientManager {
 
-  @transient lazy val log = Logger.getLogger(getClass.getName)
+  @transient lazy private val log = Logger.getLogger(getClass.getName)
 
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))
@@ -73,7 +73,7 @@ object TSDBClientManager {
    * @param saltWidth the salting prefix size
    * @param saltBuckets the number of buckets
    */
-  def apply(
+  def init(
     keytab: Option[Broadcast[Array[Byte]]],
     principal: Option[String],
     hbaseContext: HBaseContext,
