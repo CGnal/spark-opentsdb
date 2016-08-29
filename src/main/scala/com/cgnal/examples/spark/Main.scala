@@ -64,7 +64,7 @@ object Main extends App {
     else
       conf.
         setAppName("spark-cdh5-template-local").
-        setMaster("local")
+        setMaster("local[4]")
   }
 
   val sparkContext = new SparkContext(conf)

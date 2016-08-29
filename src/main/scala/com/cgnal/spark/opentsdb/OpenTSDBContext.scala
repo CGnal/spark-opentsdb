@@ -293,7 +293,10 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         saltBuckets = saltBuckets
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
-        val i = iterator.map(row => process(row, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly")), interval, conversionStrategy))
+
+        val tsdb = TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+
+        val i = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
         override def hasNext =
           if (!i.hasNext) {
@@ -305,7 +308,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
         override def next() = i.next()
       }
-    }, preservesPartitioning = true)
+    }, preservesPartitioning = false)
 
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
