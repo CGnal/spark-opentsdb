@@ -128,11 +128,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   /**
    * It loads multiple OpenTSDB timeseries into a [[com.cloudera.sparkts.TimeSeriesRDD]]
    *
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param interval  an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                  the second long is the end of the interval (exclusive).
+   *                  This method will retrieve all the metrics included into this interval.
    * @param frequency the interval frequency, see `Frequency`
-   * @param metrics a list of pair metric name, tags
+   * @param metrics   a list of pair metric name, tags
    * @return a [[com.cloudera.sparkts.TimeSeriesRDD]] instance
    */
   def loadTimeSeriesRDD(
@@ -178,10 +178,10 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * This method loads a time series from OpenTSDB as a [[org.apache.spark.sql.DataFrame]]
    *
    * @param metricName the metric name
-   * @param tags the metric tags
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param tags       the metric tags
+   * @param interval   an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                   the second long is the end of the interval (exclusive).
+   *                   This method will retrieve all the metrics included into this interval.
    * @return the data frame
    */
   def loadDataFrame(
@@ -213,11 +213,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   /**
    * This method loads a time series from OpenTSDB as a [[RDD]][ [[DataPoint]] ]
    *
-   * @param metricName the metric name
-   * @param tags the metric tags
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param metricName         the metric name
+   * @param tags               the metric tags
+   * @param interval           an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                           the second long is the end of the interval (exclusive).
+   *                           This method will retrieve all the metrics included into this interval.
    * @param conversionStrategy if `NoConversion` the `DataPoint`'s value type will the actual one, as retrieved from the storage,
    *                           otherwise, if `ConvertToDouble` the value will be converted to Double
    * @return the `RDD`
@@ -382,7 +382,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * It writes a [[RDD]][ [[DataPoint]] ] back to OpenTSDB
    *
    * @param timeseries the [[RDD]] of [[DataPoint]]s to be stored
-   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @param writeFunc  the implicit writefunc to be used for a specific value type
    * @tparam T the actual type of the `DataPoint`'s value
    */
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
@@ -416,7 +416,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * It writes a [[DataFrame]] back to OpenTSDB
    *
    * @param timeseries the data frame to be stored
-   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @param writeFunc  the implicit writefunc to be used for a specific value type
    */
   def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB) => Unit): Unit = {
     assert(timeseries.schema == StructType(
@@ -459,13 +459,12 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
       )
     })
-
   }
 
   /**
    * It writes a [[DStream]][ [[DataPoint]] ] back to OpenTSDB
    *
-   * @param dstream the distributed stream
+   * @param dstream   the distributed stream
    * @param writeFunc the implicit writefunc to be used for a specific value type
    * @tparam T the actual type of the [[DataPoint]]'s value
    */

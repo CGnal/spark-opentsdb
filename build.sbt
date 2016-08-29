@@ -37,7 +37,10 @@ scalacOptions ++= Seq(
   "-Ywarn-numeric-widen",
   "-Ywarn-value-discard",
   "-Ywarn-dead-code",
-  "-Xfuture",
+  "-Xfuture"
+)
+
+scalacOptions in (Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 

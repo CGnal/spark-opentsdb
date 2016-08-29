@@ -41,7 +41,7 @@ class SparkSpec extends SparkBaseSpec {
         val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
         val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some(tsStart --> tsEnd))
 
         val result = ts.collect()
 
@@ -58,7 +58,7 @@ class SparkSpec extends SparkBaseSpec {
         val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
         val tsEnd = Timestamp.from(Instant.parse(s"2016-07-06T20:00:00.00Z"))
 
-        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1"), tsStart -> tsEnd)
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1"), Some(tsStart --> tsEnd))
 
         val result = ts.collect()
 
@@ -75,7 +75,7 @@ class SparkSpec extends SparkBaseSpec {
         val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
         val tsEnd = Timestamp.from(Instant.parse(s"2016-07-06T20:00:00.00Z"))
 
-        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key3" -> "value3"), tsStart -> tsEnd)
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key3" -> "value3"), Some(tsStart --> tsEnd))
 
         val result = ts.collect()
 
@@ -92,7 +92,7 @@ class SparkSpec extends SparkBaseSpec {
         val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
         val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+        val ts = openTSDBContext.load("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some(tsStart --> tsEnd))
 
         val result = ts.collect()
 
@@ -143,7 +143,7 @@ class SparkSpec extends SparkBaseSpec {
       val tsStart = Timestamp.from(Instant.parse(s"2016-06-06T20:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-06-27T17:00:00.00Z"))
 
-      val df = openTSDBContext.loadDataFrame("open", Map.empty[String, String], tsStart -> tsEnd)
+      val df = openTSDBContext.loadDataFrame("open", Map.empty[String, String], Some(tsStart --> tsEnd))
 
       df.registerTempTable("open")
 
@@ -189,7 +189,7 @@ class SparkSpec extends SparkBaseSpec {
       simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
 
       val ts = openTSDBContext.loadTimeSeriesRDD(
-        startDate -> endDate,
+        Some(startDate --> endDate),
         new MillisecondFrequency(1),
         List(
           "metric1" -> Map("key1" -> "value1"),
@@ -221,7 +221,7 @@ class SparkSpec extends SparkBaseSpec {
       val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+      val df = openTSDBContext.loadDataFrame("mymetric", Map("key1" -> "value1", "key2" -> "value2"), Some(tsStart --> tsEnd))
 
       df.schema must be(
         StructType(
@@ -302,7 +302,7 @@ class SparkSpec extends SparkBaseSpec {
       val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some(tsStart --> tsEnd))
 
       df.schema must be(
         StructType(
@@ -347,7 +347,7 @@ class SparkSpec extends SparkBaseSpec {
       val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z"))
 
-      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), tsStart -> tsEnd)
+      val df = openTSDBContext.loadDataFrame("mymetric1", Map("key1" -> "value1", "key2" -> "value2"), Some(tsStart --> tsEnd))
 
       df.schema must be(
         StructType(
