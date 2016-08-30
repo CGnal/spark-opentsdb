@@ -38,11 +38,12 @@ object TSDBClientManager {
    * It shuts down the TSDB client instance in case is not used by anyone
    */
   def shutdown() = synchronized {
-    log.trace("About to shutdown the TSDB client instance")
     tsdbUsageCounter_ -= 1
     if (tsdbUsageCounter_ == 0) {
+      log.trace("About to shutdown the TSDB client instance")
       tsdb_.foreach(_.map(_.shutdown().joinUninterruptibly()))
       tsdb_ = None
+      log.trace("About to shutdown the TSDB client instance: done")
     }
   }
 
@@ -60,7 +61,7 @@ object TSDBClientManager {
 
   /**
    *
-   * @return  the TSDB client instance
+   * @return the TSDB client instance
    */
   def tsdb: Try[TSDB] = synchronized {
     tsdbUsageCounter_ += 1
@@ -78,7 +79,7 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytab       the keytab path
+   * @param keytabData   the keytab data
    * @param principal    the principal
    * @param hbaseContext the HBaseContext
    * @param tsdbTable    the tsdb table
@@ -87,7 +88,8 @@ object TSDBClientManager {
    * @param saltBuckets  the number of buckets
    */
   def init(
-    keytab: Option[Broadcast[Array[Byte]]],
+    keytabPath: Option[String],
+    keytabData: Option[Broadcast[Array[Byte]]],
     principal: Option[String],
     hbaseContext: HBaseContext,
     tsdbTable: String,
@@ -120,16 +122,21 @@ object TSDBClientManager {
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
       if (authenticationType == "kerberos") {
-        val keytabPath = s"$getCurrentDirectory/keytab"
-        val byteArray = keytab.getOrElse(throw new Exception("keytab data not available")).value
-        Files.write(Paths.get(keytabPath), byteArray)
+        val actualKeytabPath = keytabPath.getOrElse(throw new Exception("keytab path not available"))
+        val kpath = if (!new File(actualKeytabPath).exists()) {
+          val kp = s"$getCurrentDirectory/keytab"
+          val byteArray = keytabData.getOrElse(throw new Exception("keytab data not available")).value
+          Files.write(Paths.get(kp), byteArray)
+          kp
+        } else
+          actualKeytabPath
         val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
         val jaasConf =
           s"""AsynchbaseClient {
               |  com.sun.security.auth.module.Krb5LoginModule required
               |  useTicketCache=false
               |  useKeyTab=true
-              |  keyTab="$keytabPath"
+              |  keyTab="$kpath"
               |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
               |  storeKey=true;
               | };
@@ -164,7 +171,7 @@ object TSDBClientManager {
           trace(s"jaas path: ${
             jaasFile.getAbsolutePath
           }")
-        log.trace(s"keytab path: $keytabPath")
+        log.trace(s"keytab path: $kpath")
       }
       config_ = Some(config)
       asyncConfig_ = Some(asyncConfig)

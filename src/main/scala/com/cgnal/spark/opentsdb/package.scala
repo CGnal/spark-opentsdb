@@ -58,15 +58,6 @@ package object opentsdb {
     })
   }
 
-  private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
-    val scan = new Scan()
-    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
-    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
-    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
-    scan.setFilter(rowFilter)
-    scan
-  }
-
   private[opentsdb] def getMetricScan(
     bucket: Byte,
     tags: Map[String, String],
