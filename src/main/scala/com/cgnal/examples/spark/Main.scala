@@ -64,7 +64,7 @@ object Main extends App {
     else
       conf.
         setAppName("spark-cdh5-template-local").
-        setMaster("local")
+        setMaster("local[4]")
   }
 
   val sparkContext = new SparkContext(conf)
@@ -89,7 +89,7 @@ object Main extends App {
 
   val df = sqlContext.read.options(Map(
     "opentsdb.metric" -> "mymetric1",
-    "opentsdb.tags" -> "key->value1,key2->value2",
+    "opentsdb.tags" -> "key1->value1,key2->value2",
     "opentsdb.interval" -> s"$tsStart:$tsEnd",
     "opentsdb.keytab" -> args(1),
     "opentsdb.principal" -> args(2)

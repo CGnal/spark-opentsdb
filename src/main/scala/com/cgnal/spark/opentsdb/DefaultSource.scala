@@ -11,25 +11,25 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
+import org.apache.spark.sql.{ DataFrame, Row, SQLContext, SaveMode }
 
 /**
-  * Data source for integration with Spark's [[DataFrame]] API.
-  *
-  * Serves as a factory for [[OpenTSDBRelation]] instances for Spark. Spark will
-  * automatically look for a [[RelationProvider]] implementation named
-  * `DefaultSource` when the user specifies the path of a source during DDL
-  * operations through [[org.apache.spark.sql.DataFrameReader.format]].
-  */
+ * Data source for integration with Spark's [[DataFrame]] API.
+ *
+ * Serves as a factory for [[OpenTSDBRelation]] instances for Spark. Spark will
+ * automatically look for a [[RelationProvider]] implementation named
+ * `DefaultSource` when the user specifies the path of a source during DDL
+ * operations through [[org.apache.spark.sql.DataFrameReader.format]].
+ */
 class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
   /**
-    * Construct a BaseRelation using the provided context and parameters.
-    *
-    * @param sqlContext SparkSQL context
-    * @param parameters parameters given to us from SparkSQL
-    * @return a BaseRelation Object
-    */
+   * Construct a BaseRelation using the provided context and parameters.
+   *
+   * @param sqlContext SparkSQL context
+   * @param parameters parameters given to us from SparkSQL
+   * @return a BaseRelation Object
+   */
   override def createRelation(sqlContext: SQLContext, parameters: Map[String, String]): BaseRelation = {
 
     val METRIC = "opentsdb.metric"
@@ -42,9 +42,9 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val tags = parameters.get(TAGS).fold(Map.empty[String, String])(
       _.split(",").map(tk => {
-        val p = tk.trim.split("->")
-        (p(0).trim, p(1).trim)
-      }).toMap
+      val p = tk.trim.split("->")
+      (p(0).trim, p(1).trim)
+    }).toMap
     )
 
     val interval = parameters.get(INTERVAL).fold(None: Option[(Long, Long)])(
@@ -68,15 +68,15 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
   }
 
   /**
-    * Creates a relation and inserts data to specified table.
-    *
-    * @param sqlContext
-    * @param mode       Only Append mode is supported. It will upsert or insert data
-    *                   to an existing table, depending on the upsert parameter.
-    * @param parameters Necessary parameters for OpenTSDB
-    * @param data       Dataframe to save into OpenTSDB
-    * @return returns populated base relation
-    */
+   * Creates a relation and inserts data to specified table.
+   *
+   * @param sqlContext
+   * @param mode       Only Append mode is supported. It will upsert or insert data
+   *                   to an existing table, depending on the upsert parameter.
+   * @param parameters Necessary parameters for OpenTSDB
+   * @param data       Dataframe to save into OpenTSDB
+   * @return returns populated base relation
+   */
   override def createRelation(sqlContext: SQLContext, mode: SaveMode, parameters: Map[String, String], data: DataFrame): BaseRelation = {
     val openTSDBRelation = createRelation(sqlContext, parameters)
     mode match {
@@ -89,22 +89,22 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 }
 
 /**
-  * Implementation of Spark BaseRelation.
-  *
-  * @param metric          metric name
-  * @param tags            timeseries tags
-  * @param interval        timeseries interval
-  * @param openTSDBContext OpenTSDBContext context
-  * @param sqlContext      SparkSQL context
-  */
+ * Implementation of Spark BaseRelation.
+ *
+ * @param metric          metric name
+ * @param tags            timeseries tags
+ * @param interval        timeseries interval
+ * @param openTSDBContext OpenTSDBContext context
+ * @param sqlContext      SparkSQL context
+ */
 class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBContext, metric: Option[String], tags: Map[String, String], interval: Option[(Long, Long)]) extends BaseRelation with TableScan with InsertableRelation {
 
   /**
-    * Generates a SparkSQL schema object so SparkSQL knows what is being
-    * provided by this BaseRelation.
-    *
-    * @return schema generated
-    */
+   * Generates a SparkSQL schema object so SparkSQL knows what is being
+   * provided by this BaseRelation.
+   *
+   * @return schema generated
+   */
   override def schema = StructType(
     Array(
       StructField("timestamp", TimestampType, nullable = false),
@@ -115,11 +115,11 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
   )
 
   /**
-    * Writes data into OpenTSDB.
-    **
-    * @param data [[DataFrame]] to be inserted into OpenTSDB
-    * @param overwrite must be false; otherwise, throws [[UnsupportedOperationException]]
-    */
+   * Writes data into OpenTSDB.
+   * *
+   * @param data [[DataFrame]] to be inserted into OpenTSDB
+   * @param overwrite must be false; otherwise, throws [[UnsupportedOperationException]]
+   */
   override def insert(data: DataFrame, overwrite: Boolean): Unit = {
     if (overwrite) {
       throw new UnsupportedOperationException("overwrite is not yet supported")
@@ -128,10 +128,10 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
   }
 
   /**
-    * Build the RDD to scan rows.
-    *
-    * @return RDD will all the results from OpenTSDB
-    */
+   * Build the RDD to scan rows.
+   *
+   * @return RDD will all the results from OpenTSDB
+   */
   override def buildScan(): RDD[Row] =
     openTSDBContext.load(
       metric.getOrElse(throw new IllegalArgumentException(s"metric name must be specified")).trim,
@@ -151,8 +151,8 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
 }
 
 /**
-  *
-  */
+ *
+ */
 @SuppressWarnings(Array("org.wartremover.warts.Var"))
 object DefaultSource {
   var configuration: Option[Configuration] = None

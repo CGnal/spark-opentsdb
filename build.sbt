@@ -37,7 +37,10 @@ scalacOptions ++= Seq(
   "-Ywarn-numeric-widen",
   "-Ywarn-value-discard",
   "-Ywarn-dead-code",
-  "-Xfuture",
+  "-Xfuture"
+)
+
+scalacOptions in (Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 
@@ -260,4 +263,4 @@ val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
 
 buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
-compile in Compile <<= compile in Compile dependsOn buildShadedLibraries
+//compile in Compile <<= compile in Compile dependsOn buildShadedLibraries  //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project

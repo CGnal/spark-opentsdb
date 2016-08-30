@@ -13,6 +13,7 @@ import java.util
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
+import net.opentsdb.uid.UniqueId.UniqueIdType
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Result
@@ -96,7 +97,10 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   private[opentsdb] var saltBuckets: Int = OpenTSDBContext.saltBuckets
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var keytab_ : Option[Broadcast[Array[Byte]]] = None
+  private var keytabPath_ : Option[String] = None
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private var keytabData_ : Option[Broadcast[Array[Byte]]] = None
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private var principal_ : Option[String] = None
@@ -104,7 +108,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   /**
    * @return the keytab path for accessing the secure HBase
    */
-  def keytab = keytab_.getOrElse(throw new Exception("keytab has not been defined"))
+  def keytab = keytabData_.getOrElse(throw new Exception("keytab has not been defined"))
 
   /**
    * @param keytab the path of the file containing the keytab
@@ -112,7 +116,8 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def keytab_=(keytab: String) = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
-    keytab_ = Some(sqlContext.sparkContext.broadcast(byteArray))
+    keytabPath_ = Some(keytabPath)
+    keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
   }
 
   /**
@@ -128,11 +133,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   /**
    * It loads multiple OpenTSDB timeseries into a [[com.cloudera.sparkts.TimeSeriesRDD]]
    *
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param interval  an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                  the second long is the end of the interval (exclusive).
+   *                  This method will retrieve all the metrics included into this interval.
    * @param frequency the interval frequency, see `Frequency`
-   * @param metrics a list of pair metric name, tags
+   * @param metrics   a list of pair metric name, tags
    * @return a [[com.cloudera.sparkts.TimeSeriesRDD]] instance
    */
   def loadTimeSeriesRDD(
@@ -178,10 +183,10 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * This method loads a time series from OpenTSDB as a [[org.apache.spark.sql.DataFrame]]
    *
    * @param metricName the metric name
-   * @param tags the metric tags
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param tags       the metric tags
+   * @param interval   an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                   the second long is the end of the interval (exclusive).
+   *                   This method will retrieve all the metrics included into this interval.
    * @return the data frame
    */
   def loadDataFrame(
@@ -213,11 +218,11 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   /**
    * This method loads a time series from OpenTSDB as a [[RDD]][ [[DataPoint]] ]
    *
-   * @param metricName the metric name
-   * @param tags the metric tags
-   * @param interval an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                 the second long is the end of the interval (exclusive).
-   *                 This method will retrieve all the metrics included into this interval.
+   * @param metricName         the metric name
+   * @param tags               the metric tags
+   * @param interval           an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
+   *                           the second long is the end of the interval (exclusive).
+   *                           This method will retrieve all the metrics included into this interval.
    * @param conversionStrategy if `NoConversion` the `DataPoint`'s value type will the actual one, as retrieved from the storage,
    *                           otherwise, if `ConvertToDouble` the value will be converted to Double
    * @return the `RDD`
@@ -230,27 +235,34 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   ): RDD[DataPoint[_ <: AnyVal]] = {
 
     log.info("Loading metric and tags uids")
-    val uidScan = getUIDScan(metricName, tags)
-    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
-    val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
-    val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
-      (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
-    else {
-      (
-        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
-        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
-      )
-    }
-    if (metricsUID.length == 0)
-      throw new Exception(s"Metric not found: $metricName")
-    log.info("Loading metric and tags uids: done")
+
+    TSDBClientManager.init(
+      keytabPath = keytabPath_,
+      keytabData = keytabData_,
+      principal = principal_,
+      hbaseContext = hbaseContext,
+      tsdbTable = tsdbTable,
+      tsdbUidTable = tsdbUidTable,
+      saltWidth = saltWidth,
+      saltBuckets = saltBuckets
+    )
+
+    val tsdb = TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+
+    val metricsUID = tsdb.getUID(UniqueIdType.METRIC, metricName)
+
+    val tagKUIDs: Map[String, Array[Byte]] = tags.keys.map(key => (key, tsdb.getUID(UniqueIdType.TAGK, key))).toMap
+
+    val tagVUIDs: Map[String, Array[Byte]] = tags.values.map(value => (value, tsdb.getUID(UniqueIdType.TAGV, value))).toMap
+
+    TSDBClientManager.shutdown()
 
     val rows = if (saltWidth == 0) {
       log.trace("computing hbase rows without salting")
       val metricScan = getMetricScan(
         -1: Byte,
         tags,
-        metricsUID.last,
+        metricsUID,
         tagKUIDs,
         tagVUIDs,
         interval
@@ -265,7 +277,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
           val metricScan = getMetricScan(
             bucket.toByte,
             tags,
-            metricsUID.last,
+            metricsUID,
             tagKUIDs,
             tagVUIDs,
             interval
@@ -283,8 +295,9 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     }
 
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
-      TSDBClientManager(
-        keytab = keytab_,
+      TSDBClientManager.init(
+        keytabPath = keytabPath_,
+        keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
         tsdbTable = tsdbTable,
@@ -293,11 +306,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         saltBuckets = saltBuckets
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
-        val i = iterator.map(row => process(row, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly")), interval, conversionStrategy))
+
+        val tsdb = TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+
+        val i = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
         override def hasNext =
           if (!i.hasNext) {
-            log.trace("iterating done, about to shutdown the TSDB client instance")
+            log.trace("iterating done, calling shutdown on the TSDB client instance")
             TSDBClientManager.shutdown()
             false
           } else
@@ -382,13 +398,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * It writes a [[RDD]][ [[DataPoint]] ] back to OpenTSDB
    *
    * @param timeseries the [[RDD]] of [[DataPoint]]s to be stored
-   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @param writeFunc  the implicit writefunc to be used for a specific value type
    * @tparam T the actual type of the `DataPoint`'s value
    */
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
-      TSDBClientManager(
-        keytab = keytab_,
+      TSDBClientManager.init(
+        keytabPath = keytabPath_,
+        keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
         tsdbTable = tsdbTable,
@@ -400,7 +417,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         new Iterator[DataPoint[T]] {
           override def hasNext =
             if (!it.hasNext) {
-              log.trace("iterating done, about to shutdown the TSDB client instance")
+              log.trace("iterating done, calling shutdown on the TSDB client instance")
               TSDBClientManager.shutdown()
               false
             } else
@@ -416,7 +433,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    * It writes a [[DataFrame]] back to OpenTSDB
    *
    * @param timeseries the data frame to be stored
-   * @param writeFunc the implicit writefunc to be used for a specific value type
+   * @param writeFunc  the implicit writefunc to be used for a specific value type
    */
   def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB) => Unit): Unit = {
     assert(timeseries.schema == StructType(
@@ -428,8 +445,9 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
     ))
     timeseries.foreachPartition(it => {
-      TSDBClientManager(
-        keytab = keytab_,
+      TSDBClientManager.init(
+        keytabPath = keytabPath_,
+        keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
         tsdbTable = tsdbTable,
@@ -441,7 +459,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         new Iterator[DataPoint[Double]] {
           override def hasNext =
             if (!it.hasNext) {
-              log.trace("iterating done, about to shutdown the TSDB client instance")
+              log.trace("iterating done, calling shutdown on the TSDB client instance")
               TSDBClientManager.shutdown()
               false
             } else
@@ -459,13 +477,12 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
       )
     })
-
   }
 
   /**
    * It writes a [[DStream]][ [[DataPoint]] ] back to OpenTSDB
    *
-   * @param dstream the distributed stream
+   * @param dstream   the distributed stream
    * @param writeFunc the implicit writefunc to be used for a specific value type
    * @tparam T the actual type of the [[DataPoint]]'s value
    */
@@ -474,8 +491,9 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       timeseries =>
         timeseries foreachPartition {
           it =>
-            TSDBClientManager(
-              keytab = keytab_,
+            TSDBClientManager.init(
+              keytabPath = keytabPath_,
+              keytabData = keytabData_,
               principal = principal_,
               hbaseContext = hbaseContext,
               tsdbTable = tsdbTable,
@@ -487,7 +505,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               new Iterator[DataPoint[T]] {
                 override def hasNext =
                   if (!it.hasNext) {
-                    log.trace("iterating done, about to shutdown the TSDB client instance")
+                    log.trace("iterating done, calling shutdown on the TSDB client instance")
                     TSDBClientManager.shutdown()
                     false
                   } else

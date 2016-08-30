@@ -5,235 +5,59 @@
 
 package com.cgnal.spark
 
-import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.ByteBuffer
-import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
 import net.opentsdb.core.TSDB
-import net.opentsdb.utils.Config
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
-import org.apache.hadoop.hbase.spark.HBaseContext
-import org.apache.log4j.Logger
-import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
-import shaded.org.hbase.async.HBaseClient
 
 import scala.collection.convert.decorateAsJava._
 import scala.language.implicitConversions
-import scala.util.{ Success, Try }
 
 package object opentsdb {
 
-  /**
-   *
-   */
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
       tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
     })
   }
 
-  /**
-   *
-   */
-  object TSDBClientManager {
-
-    @transient lazy val log = Logger.getLogger(getClass.getName)
-
-    @inline private def writeStringToFile(file: File, str: String): Unit = {
-      val bw = new BufferedWriter(new FileWriter(file))
-      bw.write(str)
-      bw.close()
-    }
-
-    @inline private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
-
-    def shutdown() = {
-      log.trace("About to shutdown the TSDB client instance")
-      _tsdb.foreach(_.map(_.shutdown().joinUninterruptibly()))
-      _tsdb = None
-    }
-
-    @SuppressWarnings(Array("org.wartremover.warts.Var"))
-    var _tsdb: Option[Try[TSDB]] = None
-
-    @SuppressWarnings(Array("org.wartremover.warts.Var"))
-    var _config: Option[Config] = None
-
-    @SuppressWarnings(Array("org.wartremover.warts.Var"))
-    var _asyncConfig: Option[shaded.org.hbase.async.Config] = None
-
-    /**
-     *
-     * @return
-     */
-    def tsdb: Try[TSDB] = _tsdb.getOrElse {
-      Try {
-        log.trace("Creating the TSDB client instance")
-        val hbaseClient = new HBaseClient(_asyncConfig.getOrElse(throw new Exception("no configuration available")))
-        val tsdb = new TSDB(hbaseClient, _config.getOrElse(throw new Exception("no configuration available")))
-        _tsdb = Some(Success(tsdb))
-        tsdb
-      }
-    }
-
-    /**
-     *
-     * @param keytab
-     * @param principal
-     * @param hbaseContext
-     * @param tsdbTable
-     * @param tsdbUidTable
-     * @param saltWidth
-     * @param saltBuckets
-     */
-    def apply(
-      keytab: Option[Broadcast[Array[Byte]]],
-      principal: Option[String],
-      hbaseContext: HBaseContext,
-      tsdbTable: String,
-      tsdbUidTable: String,
-      saltWidth: Int,
-      saltBuckets: Int
-    ): Unit = {
-      val configuration: Configuration = {
-        val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-        val authenticationType = configuration.get("hbase.security.authentication")
-        if (authenticationType == null)
-          HBaseConfiguration.create()
-        else
-          configuration
-      }
-      val authenticationType = configuration.get("hbase.security.authentication")
-      val quorum = configuration.get("hbase.zookeeper.quorum")
-      val port = configuration.get("hbase.zookeeper.property.clientPort")
-      val asyncConfig = new shaded.org.hbase.async.Config()
-      val config = new Config(false)
-      config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
-      config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
-      if (saltWidth > 0) {
-        config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
-        config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)
-      }
-      config.disableCompactions()
-      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
-      asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
-      if (authenticationType == "kerberos") {
-        val keytabPath = s"$getCurrentDirectory/keytab"
-        val byteArray = keytab.getOrElse(throw new Exception("keytab data not available")).value
-        Files.write(Paths.get(keytabPath), byteArray)
-        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
-        val jaasConf =
-          s"""AsynchbaseClient {
-              |  com.sun.security.auth.module.Krb5LoginModule required
-              |  useTicketCache=false
-              |  useKeyTab=true
-              |  keyTab="$keytabPath"
-              |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
-              |  storeKey=true;
-                };
-            """.stripMargin
-        writeStringToFile(jaasFile, jaasConf)
-        System.setProperty(
-          "java.security.auth.login.config",
-          jaasFile.getAbsolutePath
-        )
-        configuration.set("hadoop.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
-        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
-        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
-        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
-        asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-        log.trace("Created kerberos configuration environment")
-        log.trace(s"principal: ${principal.getOrElse(throw new Exception)}")
-        log.trace(s"jaas path: ${jaasFile.getAbsolutePath}")
-        log.trace(s"keytab path: $keytabPath")
-      }
-      _config = Some(config)
-      _asyncConfig = Some(asyncConfig)
-    }
-
-  }
-
-  /**
-   *
-   * @param metricName
-   * @param tags
-   * @return
-   */
-  private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
-    val scan = new Scan()
-    val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
-    val keyRegEx: RegexStringComparator = new RegexStringComparator(name)
-    val rowFilter: RowFilter = new RowFilter(CompareOp.EQUAL, keyRegEx)
-    scan.setFilter(rowFilter)
-    scan
-  }
-
-  /**
-   *
-   * @param bucket
-   * @param tags
-   * @param metricUID
-   * @param tagKUIDs
-   * @param tagVUIDs
-   * @param interval
-   * @return
-   */
   private[opentsdb] def getMetricScan(
     bucket: Byte,
     tags: Map[String, String],
@@ -321,33 +145,16 @@ package object opentsdb {
     b
   }
 
-  /**
-   *
-   * @param reader
-   */
   implicit class OpenTSDBDataFrameReader(reader: DataFrameReader) {
     def opentsdb: DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
-  /**
-   *
-   * @param writer
-   */
   implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
     def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
-  /**
-   *
-   * @param rdd
-   */
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
 
-    /**
-     *
-     * @param sqlContext
-     * @return
-     */
     def toDF(implicit sqlContext: SQLContext) = {
       val df = rdd.map {
         dp =>
@@ -364,15 +171,11 @@ package object opentsdb {
     }
   }
 
-  /**
-   *
-   * @param self
-   */
   implicit class RichTimestamp(val self: Timestamp) extends AnyVal {
-    def -> (end: Timestamp): Option[(Long, Long)] = Some((
+    def -->(end: Timestamp): (Long, Long) = (
       self.getTime / 1000,
       end.getTime / 1000
-    ))
+    )
   }
 
 }
