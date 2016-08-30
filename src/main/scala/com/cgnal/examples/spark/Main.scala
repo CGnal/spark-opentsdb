@@ -13,6 +13,8 @@ import com.cgnal.spark.opentsdb._
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{ SparkConf, SparkContext }
 
+import scala.util.Random
+
 /*
 spark-submit --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
@@ -74,10 +76,12 @@ object Main extends App {
 
   val ts = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
   val N = 1000000
+  val M = 10
+  val r = new Random
   val points = for {
     i <- 0 until N
     epoch = ts.getTime + (i * 1000)
-    point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+    point = DataPoint(s"mymetric${r.nextInt(M)}", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
   val rdd = sparkContext.parallelize[DataPoint[Double]](points)
@@ -98,18 +102,22 @@ object Main extends App {
   val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T09:00:00.00Z")).getTime / 1000
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
 
-  val df = sqlContext.read.options(Map(
-    "opentsdb.metric" -> "mymetric1",
-    "opentsdb.tags" -> "key1->value1,key2->value2",
-    "opentsdb.keytab" -> args(1),
-    "opentsdb.principal" -> args(2)
-  )).opentsdb
+  val tot = (0 until M).map(i => {
+    val df = sqlContext.read.options(Map(
+      "opentsdb.metric" -> s"mymetric$i",
+      "opentsdb.tags" -> "key1->value1,key2->value2",
+      "opentsdb.keytab" -> args(1),
+      "opentsdb.principal" -> args(2)
+    )).opentsdb
 
-  {
     val start = System.currentTimeMillis()
     val count = df.count()
     val stop = System.currentTimeMillis()
     println(s"$count data point retrieved in ${stop - start} milliseconds")
-  }
+    count
+  }).sum
+
+  println(tot)
+
   sparkContext.stop()
 }
