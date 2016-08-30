@@ -79,7 +79,7 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytabData   the keytab data
+   * @param keytabData       the keytab path
    * @param principal    the principal
    * @param hbaseContext the HBaseContext
    * @param tsdbTable    the tsdb table
@@ -88,7 +88,6 @@ object TSDBClientManager {
    * @param saltBuckets  the number of buckets
    */
   def init(
-    keytabPath: Option[String],
     keytabData: Option[Broadcast[Array[Byte]]],
     principal: Option[String],
     hbaseContext: HBaseContext,
@@ -122,21 +121,16 @@ object TSDBClientManager {
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
       if (authenticationType == "kerberos") {
-        val actualKeytabPath = keytabPath.getOrElse(throw new Exception("keytab path not available"))
-        val kpath = if (!new File(actualKeytabPath).exists()) {
-          val kp = s"$getCurrentDirectory/keytab"
-          val byteArray = keytabData.getOrElse(throw new Exception("keytab data not available")).value
-          Files.write(Paths.get(kp), byteArray)
-          kp
-        } else
-          actualKeytabPath
+        val keytabPath = s"$getCurrentDirectory/keytab"
+        val byteArray = keytabData.getOrElse(throw new Exception("keytab data not available")).value
+        Files.write(Paths.get(keytabPath), byteArray)
         val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
         val jaasConf =
           s"""AsynchbaseClient {
               |  com.sun.security.auth.module.Krb5LoginModule required
               |  useTicketCache=false
               |  useKeyTab=true
-              |  keyTab="$kpath"
+              |  keyTab="$keytabPath"
               |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
               |  storeKey=true;
               | };
@@ -171,7 +165,7 @@ object TSDBClientManager {
           trace(s"jaas path: ${
             jaasFile.getAbsolutePath
           }")
-        log.trace(s"keytab path: $kpath")
+        log.trace(s"keytab path: $keytabPath")
       }
       config_ = Some(config)
       asyncConfig_ = Some(asyncConfig)

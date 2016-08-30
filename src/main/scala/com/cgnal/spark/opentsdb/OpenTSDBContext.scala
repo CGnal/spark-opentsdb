@@ -13,7 +13,6 @@ import java.util
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
-import net.opentsdb.uid.UniqueId.UniqueIdType
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Result
@@ -97,9 +96,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   private[opentsdb] var saltBuckets: Int = OpenTSDBContext.saltBuckets
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var keytabPath_ : Option[String] = None
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private var keytabData_ : Option[Broadcast[Array[Byte]]] = None
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
@@ -116,7 +112,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def keytab_=(keytab: String) = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
-    keytabPath_ = Some(keytabPath)
     keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
   }
 
@@ -236,33 +231,27 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     log.info("Loading metric and tags uids")
 
-    TSDBClientManager.init(
-      keytabPath = keytabPath_,
-      keytabData = keytabData_,
-      principal = principal_,
-      hbaseContext = hbaseContext,
-      tsdbTable = tsdbTable,
-      tsdbUidTable = tsdbUidTable,
-      saltWidth = saltWidth,
-      saltBuckets = saltBuckets
-    )
-
-    val tsdb = TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
-
-    val metricsUID = tsdb.getUID(UniqueIdType.METRIC, metricName)
-
-    val tagKUIDs: Map[String, Array[Byte]] = tags.keys.map(key => (key, tsdb.getUID(UniqueIdType.TAGK, key))).toMap
-
-    val tagVUIDs: Map[String, Array[Byte]] = tags.values.map(value => (value, tsdb.getUID(UniqueIdType.TAGV, value))).toMap
-
-    TSDBClientManager.shutdown()
+    val uidScan = getUIDScan(metricName, tags)
+    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
+    val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
+      (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
+    else {
+      (
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagk".getBytes))).filter(_._2 != null).collect.toMap,
+        tsdbUID.map(p => (new String(p._1.copyBytes), p._2.getValue("id".getBytes, "tagv".getBytes))).filter(_._2 != null).collect.toMap
+      )
+    }
+    if (metricsUID.length == 0)
+      throw new Exception(s"Metric not found: $metricName")
+    log.info("Loading metric and tags uids: done")
 
     val rows = if (saltWidth == 0) {
       log.trace("computing hbase rows without salting")
       val metricScan = getMetricScan(
         -1: Byte,
         tags,
-        metricsUID,
+        metricsUID.last,
         tagKUIDs,
         tagVUIDs,
         interval
@@ -277,7 +266,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
           val metricScan = getMetricScan(
             bucket.toByte,
             tags,
-            metricsUID,
+            metricsUID.last,
             tagKUIDs,
             tagVUIDs,
             interval
@@ -296,7 +285,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
       TSDBClientManager.init(
-        keytabPath = keytabPath_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -404,7 +392,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager.init(
-        keytabPath = keytabPath_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -446,7 +433,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     ))
     timeseries.foreachPartition(it => {
       TSDBClientManager.init(
-        keytabPath = keytabPath_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -492,7 +478,6 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         timeseries foreachPartition {
           it =>
             TSDBClientManager.init(
-              keytabPath = keytabPath_,
               keytabData = keytabData_,
               principal = principal_,
               hbaseContext = hbaseContext,

@@ -251,7 +251,7 @@ class SparkSpec extends SparkBaseSpec {
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         val epoch = ts.getTime
-        tsdb.addPoint("mymetric1", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2").asJava)
+        tsdb.addPoint("mymetric1", epoch, i.toLong, Map("key1" -> "value1", "key2" -> "value2").asJava).join()
       }
 
       val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T09:00:00.00Z")).getTime / 1000
