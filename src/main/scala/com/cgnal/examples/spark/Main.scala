@@ -76,7 +76,7 @@ object Main extends App {
   val N = 1000000
   val points = for {
     i <- 0 until N
-    epoch = ts.getTime + i
+    epoch = ts.getTime + (i * 1000)
     point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
