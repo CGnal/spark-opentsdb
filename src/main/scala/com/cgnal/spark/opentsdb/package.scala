@@ -9,10 +9,12 @@ import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
+import com.stumbleupon.async.{ Callback, Deferred }
 import net.opentsdb.core.TSDB
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
@@ -22,39 +24,54 @@ import scala.language.implicitConversions
 
 package object opentsdb {
 
+  @transient private lazy val log = Logger.getLogger(getClass.getName)
+
+  private def registerCallback(deferred: Deferred[AnyRef]): Unit = {
+    deferred.addCallback(new Callback[Unit, AnyRef] {
+      override def call(t: AnyRef): Unit = {
+      }
+    })
+    deferred.addErrback(new Callback[Unit, Throwable] {
+      override def call(t: Throwable) = {
+        log.error("Error in adding a data point", t)
+      }
+    })
+    ()
+  }
+
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
     })
   }
 
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
     })
   }
 
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
     })
   }
 
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
     })
   }
 
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
     })
   }
 
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
     it.foreach(dp => {
-      tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava)
+      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
     })
   }
 
