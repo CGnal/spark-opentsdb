@@ -17,7 +17,6 @@ import org.apache.spark.{ SparkConf, SparkContext }
 spark-submit --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
   --conf spark.executor.extraClassPath=/etc/hbase/conf \
-  --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/etc/hbase/conf/jaas.conf \
   --master yarn --deploy-mode client \
   --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@VMCLUSTER
  */
@@ -68,21 +67,33 @@ object Main extends App {
   }
 
   val sparkContext = new SparkContext(conf)
+
+  sparkContext.setLogLevel("ERROR")
+
   implicit val sqlContext: SQLContext = new SQLContext(sparkContext)
 
+  val ts = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
+  val N = 1000000
   val points = for {
-    i <- 0 until 10
-    ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
-    epoch = ts.getTime
+    i <- 0 until N
+    epoch = ts.getTime + i
     point = DataPoint("mymetric1", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
   val rdd = sparkContext.parallelize[DataPoint[Double]](points)
 
-  rdd.toDF.write.options(Map(
-    "opentsdb.keytab" -> args(1),
-    "opentsdb.principal" -> args(2)
-  )).mode("append").opentsdb
+  OpenTSDBContext.saltWidth = 1
+  OpenTSDBContext.saltBuckets = 4
+
+  {
+    val start = System.currentTimeMillis()
+    rdd.toDF.write.options(Map(
+      "opentsdb.keytab" -> args(1),
+      "opentsdb.principal" -> args(2)
+    )).mode("append").opentsdb
+    val stop = System.currentTimeMillis()
+    println(s"$N data point written in ${stop - start} milliseconds")
+  }
 
   val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T09:00:00.00Z")).getTime / 1000
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
@@ -90,14 +101,15 @@ object Main extends App {
   val df = sqlContext.read.options(Map(
     "opentsdb.metric" -> "mymetric1",
     "opentsdb.tags" -> "key1->value1,key2->value2",
-    "opentsdb.interval" -> s"$tsStart:$tsEnd",
     "opentsdb.keytab" -> args(1),
     "opentsdb.principal" -> args(2)
   )).opentsdb
 
-  val result = df.collect()
-
-  result.foreach(println(_))
-
+  {
+    val start = System.currentTimeMillis()
+    val count = df.count()
+    val stop = System.currentTimeMillis()
+    println(s"$count data point retrieved in ${stop - start} milliseconds")
+  }
   sparkContext.stop()
 }
