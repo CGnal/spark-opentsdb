@@ -35,6 +35,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
     val METRIC = "opentsdb.metric"
     val TAGS = "opentsdb.tags"
     val INTERVAL = "opentsdb.interval"
+    val KEYTABLOCALTEMPDIR = "opentsdb.keytabLocalTempDir"
     val KEYTAB = "opentsdb.keytab"
     val PRINCIPAL = "opentsdb.principal"
 
@@ -54,11 +55,15 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
       }
     )
 
+    val keytabLocalTempDir = parameters.get(KEYTABLOCALTEMPDIR)
+
     val keytab = parameters.get(KEYTAB)
 
     val principal = parameters.get(PRINCIPAL)
 
     val openTSDBContext = new OpenTSDBContext(sqlContext, DefaultSource.configuration)
+
+    keytabLocalTempDir.foreach(openTSDBContext.keytabLocalTempDir = _)
 
     keytab.foreach(openTSDBContext.keytab = _)
 

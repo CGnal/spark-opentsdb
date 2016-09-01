@@ -99,6 +99,9 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   private var keytabData_ : Option[Broadcast[Array[Byte]]] = None
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private var keytabLocalTempDir_ : Option[String] = None
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private var principal_ : Option[String] = None
 
   /**
@@ -114,6 +117,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
     keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
   }
+
+  /**
+   * @return
+   */
+  def keytabLocalTempDir = keytabLocalTempDir_.getOrElse(throw new Exception("keytabLocalTempDir has not been defined"))
+
+  def keytabLocalTempDir_=(dir: String) = keytabLocalTempDir_ = Some(dir)
 
   /**
    * @return the Kerberos principal
@@ -229,7 +239,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     conversionStrategy: ConversionStrategy = NoConversion
   ): RDD[DataPoint[_ <: AnyVal]] = {
 
-    log.info("Loading metric and tags uids")
+    log.trace("Loading metric and tags uids")
 
     val uidScan = getUIDScan(metricName, tags)
     val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
@@ -244,7 +254,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     }
     if (metricsUID.length == 0)
       throw new Exception(s"Metric not found: $metricName")
-    log.info("Loading metric and tags uids: done")
+    log.trace("Loading metric and tags uids: done")
 
     val rows = if (saltWidth == 0) {
       log.trace("computing hbase rows without salting")
@@ -285,6 +295,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
 
     val rdd = rows.mapPartitions[Iterator[DataPoint[_ <: AnyVal]]](f = iterator => {
       TSDBClientManager.init(
+        keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -392,6 +403,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
   def write[T <: AnyVal](timeseries: RDD[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     timeseries.foreachPartition(it => {
       TSDBClientManager.init(
+        keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -433,6 +445,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     ))
     timeseries.foreachPartition(it => {
       TSDBClientManager.init(
+        keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
         hbaseContext = hbaseContext,
@@ -478,6 +491,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         timeseries foreachPartition {
           it =>
             TSDBClientManager.init(
+              keytabLocalTempDir = keytabLocalTempDir_,
               keytabData = keytabData_,
               principal = principal_,
               hbaseContext = hbaseContext,

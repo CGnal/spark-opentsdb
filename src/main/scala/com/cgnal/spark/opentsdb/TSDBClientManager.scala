@@ -6,7 +6,8 @@
 package com.cgnal.spark.opentsdb
 
 import java.io.{ BufferedWriter, File, FileWriter }
-import java.nio.file.{ Files, Paths }
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.{ FileSystems, Files, Path, Paths }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
@@ -16,6 +17,7 @@ import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
+import scala.collection.convert.decorateAsJava._
 
 import scala.util.{ Success, Try }
 
@@ -40,10 +42,10 @@ object TSDBClientManager {
   def shutdown() = synchronized {
     tsdbUsageCounter_ -= 1
     if (tsdbUsageCounter_ == 0) {
-      log.trace("About to shutdown the TSDB client instance")
+      log.info("About to shutdown the TSDB client instance")
       tsdb_.foreach(_.map(_.shutdown().joinUninterruptibly()))
       tsdb_ = None
-      log.trace("About to shutdown the TSDB client instance: done")
+      log.info("About to shutdown the TSDB client instance: done")
     }
   }
 
@@ -79,7 +81,7 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytabData       the keytab path
+   * @param keytabData   the keytab path
    * @param principal    the principal
    * @param hbaseContext the HBaseContext
    * @param tsdbTable    the tsdb table
@@ -88,6 +90,7 @@ object TSDBClientManager {
    * @param saltBuckets  the number of buckets
    */
   def init(
+    keytabLocalTempDir: Option[String],
     keytabData: Option[Broadcast[Array[Byte]]],
     principal: Option[String],
     hbaseContext: HBaseContext,
@@ -97,6 +100,7 @@ object TSDBClientManager {
     saltBuckets: Int
   ): Unit = synchronized {
     if (config_.isEmpty || asyncConfig_.isEmpty) {
+      log.info("Initialising the OpenTSDBClientManager")
       val configuration: Configuration = {
         val configuration: Configuration = hbaseContext.broadcastedConf.value.value
         val authenticationType = configuration.get("hbase.security.authentication")
@@ -121,10 +125,18 @@ object TSDBClientManager {
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
       if (authenticationType == "kerberos") {
-        val keytabPath = s"$getCurrentDirectory/keytab"
+        val kdir = keytabLocalTempDir.getOrElse(throw new Exception("keytab temp dir not available"))
+        val keytabPath = s"$kdir/keytab"
         val byteArray = keytabData.getOrElse(throw new Exception("keytab data not available")).value
+
+        Files.deleteIfExists(Paths.get(keytabPath))
+        val keytabFile = Files.createFile(Paths.get(s"$keytabPath"))
+        Files.setPosixFilePermissions(keytabFile, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE).asJava)
         Files.write(Paths.get(keytabPath), byteArray)
-        val jaasFile = java.io.File.createTempFile("jaas", ".jaas")
+
+        Files.deleteIfExists(Paths.get(s"$kdir/jaas.conf"))
+        val jaasFile = Files.createFile(FileSystems.getDefault().getPath(s"$kdir/jaas.conf"))
+        Files.setPosixFilePermissions(jaasFile, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE).asJava)
         val jaasConf =
           s"""AsynchbaseClient {
               |  com.sun.security.auth.module.Krb5LoginModule required
@@ -136,39 +148,20 @@ object TSDBClientManager {
               | };
         """.stripMargin
         writeStringToFile(
-          jaasFile,
+          jaasFile.toFile,
           jaasConf
         )
-        System.setProperty(
-          "java.security.auth.login.config",
-          jaasFile.getAbsolutePath
-        )
-        configuration.set(
-          "hadoop.security.authentication", "kerberos"
-        )
-        asyncConfig.
-          overrideConfig("hbase.security.auth.enable", "true")
-        asyncConfig.
-          overrideConfig("hbase.security.authentication", "kerberos")
-        asyncConfig.overrideConfig(
-          "hbase.kerberos.regionserver.principal",
-          configuration.get("hbase.regionserver.kerberos.principal")
-        )
-        asyncConfig.
-          overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
+
+        configuration.set("hadoop.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.security.auth.enable", "true")
+        asyncConfig.overrideConfig("hbase.security.authentication", "kerberos")
+        asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
+        asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
-        log.trace(
-          "Created kerberos configuration environment"
-        )
-        log.trace(s"principal: ${principal.getOrElse(throw new Exception)}")
-        log.
-          trace(s"jaas path: ${
-            jaasFile.getAbsolutePath
-          }")
-        log.trace(s"keytab path: $keytabPath")
       }
       config_ = Some(config)
       asyncConfig_ = Some(asyncConfig)
+      log.info("Initialising the OpenTSDBClientManager: done")
     }
   }
 
