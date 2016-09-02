@@ -11,7 +11,7 @@ import java.nio.file.{ FileSystems, Files, Paths }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
-import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool }
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool, SoftReferenceObjectPool }
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
@@ -50,7 +50,7 @@ object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
-  @transient val pool = new GenericObjectPool[TSDB](new TSDBClientFactory())
+  @transient val pool = new SoftReferenceObjectPool[TSDB](new TSDBClientFactory())
 
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))
