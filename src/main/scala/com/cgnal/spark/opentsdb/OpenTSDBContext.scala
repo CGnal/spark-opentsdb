@@ -29,7 +29,7 @@ import shaded.org.hbase.async.KeyValue
 
 import scala.collection.convert.decorateAsScala._
 import scala.collection.mutable.ListBuffer
-import scala.language.{ postfixOps, reflectiveCalls }
+import scala.language.{ higherKinds, postfixOps, reflectiveCalls }
 
 /**
  * A class representing a single datapoint
@@ -487,33 +487,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    */
   def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     dstream foreachRDD {
-      timeseries =>
-        timeseries foreachPartition {
-          it =>
-            TSDBClientManager.init(
-              keytabLocalTempDir = keytabLocalTempDir_,
-              keytabData = keytabData_,
-              principal = principal_,
-              hbaseContext = hbaseContext,
-              tsdbTable = tsdbTable,
-              tsdbUidTable = tsdbUidTable,
-              saltWidth = saltWidth,
-              saltBuckets = saltBuckets
-            )
-            writeFunc(
-              new Iterator[DataPoint[T]] {
-                override def hasNext =
-                  if (!it.hasNext) {
-                    log.trace("iterating done, calling shutdown on the TSDB client instance")
-                    TSDBClientManager.shutdown()
-                    false
-                  } else
-                    it.hasNext
-
-                override def next() = it.next()
-              }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
-            )
-        }
+      this.write(_)(writeFunc)
     }
   }
 
