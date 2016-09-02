@@ -7,19 +7,41 @@ package com.cgnal.spark.opentsdb
 
 import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.file.attribute.PosixFilePermission
-import java.nio.file.{ FileSystems, Files, Path, Paths }
+import java.nio.file.{ FileSystems, Files, Paths }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool }
+import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
+
 import scala.collection.convert.decorateAsJava._
 
-import scala.util.{ Success, Try }
+class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
+
+  @transient lazy private val log = Logger.getLogger(getClass.getName)
+
+  override def wrap(tsdb: TSDB): PooledObject[TSDB] = new DefaultPooledObject[TSDB](tsdb)
+
+  override def create(): TSDB = synchronized {
+    log.info("About to create the TSDB client instance")
+    val hbaseClient = new HBaseClient(TSDBClientManager.asyncConfig_.getOrElse(throw new Exception("no configuration available")))
+    val tsdb = new TSDB(hbaseClient, TSDBClientManager.config_.getOrElse(throw new Exception("no configuration available")))
+    log.info("About to create the TSDB client instance: done")
+    tsdb
+  }
+
+  override def destroyObject(pooledTsdb: PooledObject[TSDB]): Unit = synchronized {
+    log.info("About to shutdown the TSDB client instance")
+    pooledTsdb.getObject.shutdown().joinUninterruptibly()
+    log.info("About to shutdown the TSDB client instance: done")
+  }
+}
 
 /**
  * This class is responsible for creating and managing a TSDB client instance
@@ -28,56 +50,19 @@ object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
+  @transient val pool = new GenericObjectPool[TSDB](new TSDBClientFactory())
+
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))
     bw.write(str)
     bw.close()
   }
 
-  @inline private def getCurrentDirectory = new java.io.File(".").getCanonicalPath
-
-  /**
-   * It shuts down the TSDB client instance in case is not used by anyone
-   */
-  def shutdown() = synchronized {
-    tsdbUsageCounter_ -= 1
-    if (tsdbUsageCounter_ == 0) {
-      log.info("About to shutdown the TSDB client instance")
-      tsdb_.foreach(_.map(_.shutdown().joinUninterruptibly()))
-      tsdb_ = None
-      log.info("About to shutdown the TSDB client instance: done")
-    }
-  }
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var config_ : Option[Config] = None
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var tsdb_ : Option[Try[TSDB]] = None
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var tsdbUsageCounter_ = 0
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var config_ : Option[Config] = None
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private var asyncConfig_ : Option[shaded.org.hbase.async.Config] = None
-
-  /**
-   *
-   * @return the TSDB client instance
-   */
-  def tsdb: Try[TSDB] = synchronized {
-    tsdbUsageCounter_ += 1
-    tsdb_.getOrElse {
-      Try {
-        log.trace("Creating the TSDB client instance")
-        val hbaseClient = new HBaseClient(asyncConfig_.getOrElse(throw new Exception("no configuration available")))
-        val tsdb = new TSDB(hbaseClient, config_.getOrElse(throw new Exception("no configuration available")))
-        tsdb_ = Some(Success(tsdb))
-        tsdbUsageCounter_ = 1
-        tsdb
-      }
-    }
-  }
+  private[opentsdb] var asyncConfig_ : Option[shaded.org.hbase.async.Config] = None
 
   /**
    *

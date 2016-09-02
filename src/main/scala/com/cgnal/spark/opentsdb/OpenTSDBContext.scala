@@ -306,14 +306,14 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
 
-        val tsdb = TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+        val tsdb = TSDBClientManager.pool.borrowObject()
 
         val i = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
         override def hasNext =
           if (!i.hasNext) {
             log.trace("iterating done, calling shutdown on the TSDB client instance")
-            TSDBClientManager.shutdown()
+            TSDBClientManager.pool.returnObject(tsdb)
             false
           } else
             i.hasNext
@@ -412,18 +412,19 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
+      val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[T]] {
           override def hasNext =
             if (!it.hasNext) {
               log.trace("iterating done, calling shutdown on the TSDB client instance")
-              TSDBClientManager.shutdown()
+              TSDBClientManager.pool.returnObject(tsdb)
               false
             } else
               it.hasNext
 
           override def next() = it.next()
-        }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+        }, tsdb
       )
     })
   }
@@ -454,12 +455,13 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
+      val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[Double]] {
           override def hasNext =
             if (!it.hasNext) {
               log.trace("iterating done, calling shutdown on the TSDB client instance")
-              TSDBClientManager.shutdown()
+              TSDBClientManager.pool.returnObject(tsdb)
               false
             } else
               it.hasNext
@@ -473,7 +475,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               row.getAs[Map[String, String]]("tags")
             )
           }
-        }, TSDBClientManager.tsdb.getOrElse(throw new Exception("the TSDB client instance has not been initialised correctly"))
+        }, tsdb
       )
     })
   }
@@ -487,7 +489,34 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
    */
   def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     dstream foreachRDD {
-      this.write(_)(writeFunc)
+      timeseries =>
+        timeseries foreachPartition {
+          it =>
+            TSDBClientManager.init(
+              keytabLocalTempDir = keytabLocalTempDir_,
+              keytabData = keytabData_,
+              principal = principal_,
+              hbaseContext = hbaseContext,
+              tsdbTable = tsdbTable,
+              tsdbUidTable = tsdbUidTable,
+              saltWidth = saltWidth,
+              saltBuckets = saltBuckets
+            )
+            val tsdb = TSDBClientManager.pool.borrowObject()
+            writeFunc(
+              new Iterator[DataPoint[T]] {
+                override def hasNext =
+                  if (!it.hasNext) {
+                    log.trace("iterating done, calling shutdown on the TSDB client instance")
+                    TSDBClientManager.pool.returnObject(tsdb)
+                    false
+                  } else
+                    it.hasNext
+
+                override def next() = it.next()
+              }, tsdb
+            )
+        }
     }
   }
 
