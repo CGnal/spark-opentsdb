@@ -35,7 +35,7 @@
             <artifactId>opentsdb</artifactId>
             <version>${opentsdb-version}</version>
             <exclusions>
-                <exclusion>
+				<exclusion>
                     <groupId>com.google.protobuf</groupId>
                     <artifactId>protobuf-java</artifactId>
                 </exclusion>
@@ -62,10 +62,6 @@
                 <exclusion>
                     <groupId>com.google.gwt</groupId>
                     <artifactId>gwt-user</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.google.guava</groupId>
-                    <artifactId>guava</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.jboss.netty</groupId>
@@ -114,6 +110,10 @@
                                     <pattern>org.hbase.async</pattern>
                                     <shadedPattern>shaded.org.hbase.async</shadedPattern>
                                 </relocation>
+								<relocation>
+									<pattern>com.google.common</pattern>
+									<shadedPattern>shaded.com.google.common</shadedPattern>
+								</relocation>
                             </relocations>
                         </configuration>
                     </execution>
