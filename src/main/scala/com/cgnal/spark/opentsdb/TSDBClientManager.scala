@@ -11,7 +11,7 @@ import java.nio.file.{ FileSystems, Files, Paths }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
-import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool, SoftReferenceObjectPool }
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectPool }
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
@@ -107,7 +107,7 @@ object TSDBClientManager {
         config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)
       }
       config.disableCompactions()
-      asyncConfig.overrideConfig("hbase.zookeeper.quorum", s"$quorum:$port")
+      asyncConfig.overrideConfig("hbase.zookeeper.quorum", quorum.split(",").toList.map(tk => s"$tk:$port").mkString(","))
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
       if (authenticationType == "kerberos") {
         val kdir = keytabLocalTempDir.getOrElse(throw new Exception("keytab temp dir not available"))
@@ -124,13 +124,13 @@ object TSDBClientManager {
         Files.setPosixFilePermissions(jaasFile, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE).asJava)
         val jaasConf =
           s"""AsynchbaseClient {
-              |  com.sun.security.auth.module.Krb5LoginModule required
-              |  useTicketCache=false
-              |  useKeyTab=true
-              |  keyTab="$keytabPath"
-              |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
-              |  storeKey=true;
-              | };
+             |  com.sun.security.auth.module.Krb5LoginModule required
+             |  useTicketCache=false
+             |  useKeyTab=true
+             |  keyTab="$keytabPath"
+             |  principal="${principal.getOrElse(throw new Exception("principal not available"))}"
+             |  storeKey=true;
+             | };
         """.stripMargin
         writeStringToFile(
           jaasFile.toFile,
