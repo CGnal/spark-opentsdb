@@ -40,10 +40,6 @@
                     <artifactId>protobuf-java</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-math3</artifactId>
-                </exclusion>
-                <exclusion>
                     <groupId>org.apache.zookeeper</groupId>
                     <artifactId>*</artifactId>
                 </exclusion>
@@ -113,6 +109,10 @@
 								<relocation>
 									<pattern>com.google.common</pattern>
 									<shadedPattern>shaded.com.google.common</shadedPattern>
+								</relocation>
+								<relocation>
+									<pattern>org.apache.commons.math3</pattern>
+									<shadedPattern>shaded.org.apache.commons.math3</shadedPattern>
 								</relocation>
                             </relocations>
                         </configuration>
