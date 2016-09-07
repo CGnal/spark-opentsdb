@@ -16,14 +16,6 @@
     <packaging>jar</packaging>
 
     <name>${project.artifactId}-${project.version}</name>
-    <description>
-        Relocates com.google.protobuf.* to
-        whatever.asynchbase.shaded.com.google.protobuf.*
-        to avoid clashes with older or other versions of protobufs
-        or classloader conflicts. (asynchbase inherits a package
-        private class of protobuf which gets rejected in a spark
-        cluster deployment.)
-    </description>
 
     <dependencies>
         <!--
@@ -35,13 +27,9 @@
             <artifactId>opentsdb</artifactId>
             <version>${opentsdb-version}</version>
             <exclusions>
-				<exclusion>
-                    <groupId>com.google.protobuf</groupId>
-                    <artifactId>protobuf-java</artifactId>
-                </exclusion>
                 <exclusion>
                     <groupId>org.apache.zookeeper</groupId>
-                    <artifactId>*</artifactId>
+                    <artifactId>zookeeper</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>ch.qos.logback</groupId>
@@ -64,25 +52,33 @@
                     <artifactId>*</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>log4j</groupId>
-                    <artifactId>*</artifactId>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
-                    <artifactId>*</artifactId>
+                    <artifactId>log4j-over-slf4j</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
         <dependency>
             <groupId>org.hbase</groupId>
-            <artifactId>asynchbase-shaded</artifactId>
+            <artifactId>asynchbase</artifactId>
             <version>${asynchbase-version}</version>
             <exclusions>
                 <exclusion>
-                    <groupId>com.google.protobuf</groupId>
-                    <artifactId>protobuf-java</artifactId>
+                    <groupId>org.apache.zookeeper</groupId>
+                    <artifactId>zookeeper</artifactId>
                 </exclusion>
-            </exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>log4j-over-slf4j</artifactId>
+                </exclusion>
+			</exclusions>
         </dependency>
     </dependencies>
 
@@ -113,6 +109,10 @@
 								<relocation>
 									<pattern>org.apache.commons.math3</pattern>
 									<shadedPattern>shaded.org.apache.commons.math3</shadedPattern>
+								</relocation>
+								<relocation>
+									<pattern>com.google.protobuf</pattern>
+									<shadedPattern>shaded.com.google.protobuf</shadedPattern>
 								</relocation>
                             </relocations>
                         </configuration>

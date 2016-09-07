@@ -266,4 +266,4 @@ val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
 
 buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
-//compile in Compile <<= compile in Compile dependsOn buildShadedLibraries  //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project
+compile in Compile <<= compile in Compile dependsOn buildShadedLibraries  //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project
