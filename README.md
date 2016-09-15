@@ -3,6 +3,6 @@ It's a prototype aiming to show how to integrate [opentsdb](http://opentsdb.net)
 
 The idea behind is to provide a repository for storing and analysing time series.
 
-in caso of some compilation error, run
+In case of some compilation error, run
 
 > sbt buildShadedLibraries
