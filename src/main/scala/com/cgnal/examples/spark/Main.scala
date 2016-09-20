@@ -16,11 +16,13 @@ import org.apache.spark.{ SparkConf, SparkContext }
 import scala.util.Random
 
 /*
-spark-submit --executor-memory 1200M \
+  spark-submit --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
   --conf spark.executor.extraClassPath=/etc/hbase/conf \
   --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/tmp/jaas.conf \
   --master yarn --deploy-mode client \
+  --keytab dgreco.keytab \
+  --principal dgreco@DGRECO-MBP.LOCAL \
   --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
  */
 
@@ -89,17 +91,15 @@ object Main extends App {
 
   OpenTSDBContext.saltWidth = 1
   OpenTSDBContext.saltBuckets = 4
-  /*
-  {
-    val start = System.currentTimeMillis()
-    rdd.toDF.write.options(Map(
-      "opentsdb.keytabLocalTempDir" -> "/tmp",
-      "opentsdb.keytab" -> args(1),
-      "opentsdb.principal" -> args(2)
-    )).mode("append").opentsdb
-    val stop = System.currentTimeMillis()
-    println(s"$N data point written in ${stop - start} milliseconds")
-  }*/
+
+  val start = System.currentTimeMillis()
+  rdd.toDF.write.options(Map(
+    "opentsdb.keytabLocalTempDir" -> "/tmp",
+    "opentsdb.keytab" -> args(1),
+    "opentsdb.principal" -> args(2)
+  )).mode("append").opentsdb()
+  val stop = System.currentTimeMillis()
+  println(s"$N data point written in ${stop - start} milliseconds")
 
   val tsStart = Timestamp.from(Instant.parse(s"2016-07-05T09:00:00.00Z")).getTime / 1000
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000

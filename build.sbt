@@ -26,6 +26,8 @@ scalastyleFailOnError := true
 
 dependencyUpdatesExclusions := moduleFilter(organization = "org.scala-lang")
 
+javacOptions in ThisBuild ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
+
 scalacOptions ++= Seq(
   "-deprecation",
   "-encoding", "UTF-8", // yes, this is 2 args
@@ -140,7 +142,6 @@ val hbaseExcludes =
     exclude("commons-beanutils", "commons-beanutils")
 
 val assemblyDependencies = Seq(
-  sparkExcludes("org.apache.hbase" % "hbase-spark" % hbaseVersion % "compile"),
   sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % "compile"),
@@ -249,9 +250,10 @@ lazy val projectAssembly = (project in file("assembly")).
     },
     assemblyMergeStrategy in assembly := {
       case "org/apache/spark/unused/UnusedStubClass.class" => MergeStrategy.last
-      case x =>
-        val oldStrategy = (assemblyMergeStrategy in assembly).value
-        oldStrategy(x)
+      case s if s contains "META-INF"                      => MergeStrategy.discard
+      case x                                               => MergeStrategy.last
+//        val oldStrategy = (assemblyMergeStrategy in assembly).value
+//        oldStrategy(x)
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
     libraryDependencies in assembly := assemblyDependencies

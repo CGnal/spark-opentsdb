@@ -13,11 +13,8 @@ import java.util
 
 import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
-import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
@@ -68,20 +65,21 @@ object OpenTSDBContext {
    */
   var saltBuckets: Int = 0
 
+  def apply(sqlContext: SQLContext): OpenTSDBContext = new OpenTSDBContext(sqlContext)(DefaultSourceConfigurator)
+
 }
 
 /**
  * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
  *
  * @param sqlContext    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
- * @param configuration The HBase configuration that can be optionally passed, if None it will be automatically retrieved from
- *                      the classpath
+ * @param configurator  The Configurator instance that will be used to create the configuration
  */
-class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuration: Option[Configuration] = None) extends Serializable {
+class OpenTSDBContext(@transient sqlContext: SQLContext)(implicit configurator: OpenTSDBConfigurator) extends Serializable {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  private val hbaseContext = new HBaseContext(sqlContext.sparkContext, configuration.getOrElse(new Configuration()))
+  private lazy val hbaseConfiguration = configurator.configuration
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var tsdbTable = OpenTSDBContext.tsdbTable
@@ -242,7 +240,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
     log.trace("Loading metric and tags uids")
 
     val uidScan = getUIDScan(metricName, tags)
-    val tsdbUID = hbaseContext.hbaseRDD(TableName.valueOf(tsdbUidTable), uidScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+    val tsdbUID = sqlContext.sparkContext.loadTable(tsdbUidTable, uidScan)
     val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
@@ -266,7 +264,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         tagVUIDs,
         interval
       )
-      hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+      sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
     } else {
       assert(saltWidth == 1)
       assert(saltBuckets >= 1)
@@ -281,7 +279,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
             tagVUIDs,
             interval
           )
-          hbaseContext.hbaseRDD(TableName.valueOf(tsdbTable), metricScan).asInstanceOf[RDD[(ImmutableBytesWritable, Result)]]
+          sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
       } toList
 
       val initRDD = rdds.headOption.getOrElse(throw new Exception("There must be at least one RDD"))
@@ -298,7 +296,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
-        hbaseContext = hbaseContext,
+        baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
         saltWidth = saltWidth,
@@ -406,7 +404,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
-        hbaseContext = hbaseContext,
+        baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
         saltWidth = saltWidth,
@@ -449,7 +447,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
         keytabLocalTempDir = keytabLocalTempDir_,
         keytabData = keytabData_,
         principal = principal_,
-        hbaseContext = hbaseContext,
+        baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
         saltWidth = saltWidth,
@@ -496,7 +494,7 @@ class OpenTSDBContext(@transient sqlContext: SQLContext, @transient configuratio
               keytabLocalTempDir = keytabLocalTempDir_,
               keytabData = keytabData_,
               principal = principal_,
-              hbaseContext = hbaseContext,
+              baseConf = hbaseConfiguration,
               tsdbTable = tsdbTable,
               tsdbUidTable = tsdbUidTable,
               saltWidth = saltWidth,

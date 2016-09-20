@@ -11,10 +11,17 @@ import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
 import net.opentsdb.core.TSDB
-import org.apache.hadoop.hbase.client.Scan
+import org.apache.hadoop.hbase.{ HBaseConfiguration, TableName }
+import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable
+import org.apache.hadoop.hbase.mapreduce.{ IdentityTableMapper, TableInputFormat, TableMapReduceUtil }
+import org.apache.hadoop.mapred.JobConf
+import org.apache.hadoop.mapreduce.Job
+import org.apache.hadoop.security.UserGroupInformation
 import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
@@ -202,6 +209,25 @@ package object opentsdb {
       self.getTime / 1000,
       end.getTime / 1000
     )
+  }
+
+  implicit class EnrichedSparkContext(sparkContext: SparkContext) {
+
+    def loadTable(tableName: TableName, scan: Scan): RDD[(ImmutableBytesWritable, Result)] = {
+      val conf = new JobConf(HBaseConfiguration.create(sparkContext.hadoopConfiguration))
+      val job = Job.getInstance(conf)
+      TableMapReduceUtil.initTableMapperJob(tableName, scan, classOf[IdentityTableMapper], null, null, job)
+      conf.getCredentials.addAll { UserGroupInformation.getCurrentUser.getCredentials }
+      sparkContext.newAPIHadoopRDD(
+        job.getConfiguration,
+        classOf[TableInputFormat],
+        classOf[ImmutableBytesWritable],
+        classOf[Result]
+      )
+    }
+
+    def loadTable(tableName: String, scan: Scan): RDD[(ImmutableBytesWritable, Result)] = loadTable(TableName.valueOf(tableName), scan)
+
   }
 
 }

@@ -8,6 +8,7 @@ package com.cgnal.spark.opentsdb
 import java.sql.Timestamp
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
@@ -61,7 +62,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val principal = parameters.get(PRINCIPAL)
 
-    val openTSDBContext = new OpenTSDBContext(sqlContext, DefaultSource.configuration)
+    val openTSDBContext = OpenTSDBContext(sqlContext)
 
     keytabLocalTempDir.foreach(openTSDBContext.keytabLocalTempDir = _)
 
@@ -155,10 +156,25 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
 
 }
 
-/**
- *
- */
+trait OpenTSDBConfigurator { this: Serializable =>
+
+  def configuration: Configuration
+
+}
+
 @SuppressWarnings(Array("org.wartremover.warts.Var"))
-object DefaultSource {
-  var configuration: Option[Configuration] = None
+object DefaultSourceConfigurator extends OpenTSDBConfigurator with Serializable {
+
+  @transient private var _configuration: Option[Configuration] = None
+
+  private def updateConf(conf: Configuration = HBaseConfiguration.create()) = {
+    _configuration = Some { conf }
+    conf
+  }
+
+  def configuration = _configuration match {
+    case Some(conf) => conf
+    case None | null => updateConf()
+  }
+
 }

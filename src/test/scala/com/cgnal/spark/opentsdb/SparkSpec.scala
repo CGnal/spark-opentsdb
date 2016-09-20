@@ -12,6 +12,8 @@ import java.util.TimeZone
 
 import com.cloudera.sparkts.MillisecondFrequency
 import net.opentsdb.tools.FileImporter
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{ FileSystem, Path }
 import org.apache.spark.sql.types._
 
 import scala.collection.convert.decorateAsJava._
@@ -138,7 +140,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB specifying only the metric name correctly" in {
 
-      FileImporter.importFile(hbaseAsyncClient, tsdb, "data/opentsdb.input", skip_errors = false)
+      FileImporter.importFile(hbaseAsyncClient, tsdb, "data/opentsdb.input", skip_errors = true)
 
       val tsStart = Timestamp.from(Instant.parse(s"2016-06-06T20:00:00.00Z"))
       val tsEnd = Timestamp.from(Instant.parse(s"2016-06-27T17:00:00.00Z"))
@@ -151,12 +153,19 @@ class SparkSpec extends SparkBaseSpec {
 
       val values1 = out.map(_.getAs[Double](2)).take(5625) //.collect() //TODO this test fails with collect the, is it a consequence of running inside a test?
 
-      val rdd = sparkContext.textFile("data/opentsdb.input")
+      val mapredWorkingDir = new Path(sparkContext.hadoopConfiguration.get("mapred.working.dir"))
 
-      val splittedLines = rdd.map {
-        line =>
-          line.split(' ')
-      }
+      val dataDirPath = new Path(mapredWorkingDir, "data")
+      val dataFilePath = new Path(dataDirPath, "opentsdb.input")
+
+      val localFs = FileSystem.getLocal(new Configuration)
+
+      localFs.mkdirs(dataDirPath)
+      localFs.copyFromLocalFile(false, true, new Path("data/opentsdb.input"), dataFilePath)
+
+      val rdd = sparkContext.textFile(s"file://${dataFilePath.toString}")
+
+      val splittedLines = rdd.map { _.split(' ') }
 
       val values2 = splittedLines.
         filter(splittedLine => splittedLine(0) == "open" && splittedLine(3) == "symbol=AAPL").
@@ -167,7 +176,7 @@ class SparkSpec extends SparkBaseSpec {
       for (i <- values1.indices) {
         val diff = Math.abs(values1(i) - values2(i))
         println(s"$i ${values1(i)} ${values2(i)} $diff")
-        diff < 0.00001 must be(true)
+        diff must be < (0.00001d)
       }
     }
   }
@@ -246,7 +255,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB using DefaultSource correctly" in {
 
-      DefaultSource.configuration = Some(hbaseUtil.getConfiguration)
+      //      DefaultSource.configuration = Some(hbaseUtil.getConfiguration)
 
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
@@ -285,8 +294,6 @@ class SparkSpec extends SparkBaseSpec {
 
   "Spark" must {
     "save timeseries points using DefaultSource correctly" in {
-
-      DefaultSource.configuration = Some(hbaseUtil.getConfiguration)
 
       val points = for {
         i <- 0 until 10

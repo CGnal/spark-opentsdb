@@ -15,7 +15,6 @@ import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectP
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.HBaseConfiguration
-import org.apache.hadoop.hbase.spark.HBaseContext
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
@@ -68,7 +67,7 @@ object TSDBClientManager {
    *
    * @param keytabData   the keytab path
    * @param principal    the principal
-   * @param hbaseContext the HBaseContext
+   * @param baseConf     the configuration base used by this spark context
    * @param tsdbTable    the tsdb table
    * @param tsdbUidTable the tsdb-uid table
    * @param saltWidth    the salting prefix size
@@ -78,7 +77,7 @@ object TSDBClientManager {
     keytabLocalTempDir: Option[String],
     keytabData: Option[Broadcast[Array[Byte]]],
     principal: Option[String],
-    hbaseContext: HBaseContext,
+    baseConf: Configuration,
     tsdbTable: String,
     tsdbUidTable: String,
     saltWidth: Int,
@@ -86,14 +85,12 @@ object TSDBClientManager {
   ): Unit = synchronized {
     if (config_.isEmpty || asyncConfig_.isEmpty) {
       log.info("Initialising the OpenTSDBClientManager")
-      val configuration: Configuration = {
-        val configuration: Configuration = hbaseContext.broadcastedConf.value.value
-        val authenticationType = configuration.get("hbase.security.authentication")
-        if (authenticationType == null)
-          HBaseConfiguration.create()
-        else
-          configuration
-      }
+      val configuration: Configuration = baseConf
+      //      {
+      //        val authenticationType = baseConf.get("hbase.security.authentication")
+      //        if (authenticationType == null) HBaseConfiguration.create(baseConf)
+      //        else baseConf
+      //      }
       val authenticationType = configuration.get("hbase.security.authentication")
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")
