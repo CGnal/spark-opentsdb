@@ -86,11 +86,6 @@ object TSDBClientManager {
     if (config_.isEmpty || asyncConfig_.isEmpty) {
       log.info("Initialising the OpenTSDBClientManager")
       val configuration: Configuration = baseConf
-      //      {
-      //        val authenticationType = baseConf.get("hbase.security.authentication")
-      //        if (authenticationType == null) HBaseConfiguration.create(baseConf)
-      //        else baseConf
-      //      }
       val authenticationType = configuration.get("hbase.security.authentication")
       val quorum = configuration.get("hbase.zookeeper.quorum")
       val port = configuration.get("hbase.zookeeper.property.clientPort")

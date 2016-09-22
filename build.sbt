@@ -252,8 +252,6 @@ lazy val projectAssembly = (project in file("assembly")).
       case "org/apache/spark/unused/UnusedStubClass.class" => MergeStrategy.last
       case s if s contains "META-INF"                      => MergeStrategy.discard
       case x                                               => MergeStrategy.last
-//        val oldStrategy = (assemblyMergeStrategy in assembly).value
-//        oldStrategy(x)
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
     libraryDependencies in assembly := assemblyDependencies

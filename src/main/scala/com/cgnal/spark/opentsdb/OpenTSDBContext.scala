@@ -65,8 +65,6 @@ object OpenTSDBContext {
    */
   var saltBuckets: Int = 0
 
-  def apply(sqlContext: SQLContext): OpenTSDBContext = new OpenTSDBContext(sqlContext)(DefaultSourceConfigurator)
-
 }
 
 /**
@@ -75,7 +73,7 @@ object OpenTSDBContext {
  * @param sqlContext    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
  * @param configurator  The Configurator instance that will be used to create the configuration
  */
-class OpenTSDBContext(@transient sqlContext: SQLContext)(implicit configurator: OpenTSDBConfigurator) extends Serializable {
+class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
