@@ -98,8 +98,6 @@ val commonsPoolVersion = "2.4.2"
 
 resolvers ++= Seq(
   Resolver.mavenLocal,
-  Resolver.sonatypeRepo("public"),
-  Resolver.typesafeRepo("releases"),
   "cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos/"
 )
 
