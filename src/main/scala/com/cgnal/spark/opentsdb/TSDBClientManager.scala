@@ -6,16 +6,16 @@
 package com.cgnal.spark.opentsdb
 
 import java.io.{ BufferedWriter, File, FileWriter }
+import java.nio.file._
 import java.nio.file.attribute.PosixFilePermission
-import java.nio.file.{ FileSystems, Files, Paths }
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectPool }
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.log4j.Logger
+import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
 import shaded.org.hbase.async.HBaseClient
 
@@ -103,6 +103,11 @@ object TSDBClientManager {
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
       if (authenticationType == "kerberos") {
         val kdir = keytabLocalTempDir.getOrElse(throw new Exception("keytab temp dir not available"))
+        try {
+          Files.createDirectories(Paths.get(kdir))
+        } catch {
+          case _: FileAlreadyExistsException =>
+        }
         val keytabPath = s"$kdir/keytab"
         val byteArray = keytabData.getOrElse(throw new Exception("keytab data not available")).value
 
@@ -135,11 +140,26 @@ object TSDBClientManager {
         asyncConfig.overrideConfig("hbase.kerberos.regionserver.principal", configuration.get("hbase.regionserver.kerberos.principal"))
         asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
+        Runtime.getRuntime.addShutdownHook(new Thread(new Runnable {
+          override def run() = {
+            Files.deleteIfExists(keytabFile)
+            Files.deleteIfExists(jaasFile)
+            try {
+              Files.deleteIfExists(Paths.get(kdir))
+            } catch {
+              case _: FileSystemException =>
+            }
+            ()
+          }
+        }))
+        SparkEnv.get.executorId
+        config_ = Some(config)
+        asyncConfig_ = Some(asyncConfig)
+        log.info("Initialising the OpenTSDBClientManager: done")
       }
-      config_ = Some(config)
-      asyncConfig_ = Some(asyncConfig)
-      log.info("Initialising the OpenTSDBClientManager: done")
     }
   }
+
+  def stop() = pool.close()
 
 }
