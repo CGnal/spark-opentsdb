@@ -5,14 +5,14 @@
 
 package com.cgnal.spark.opentsdb
 
-import java.io.{BufferedWriter, File, FileWriter}
+import java.io.{ BufferedWriter, File, FileWriter }
 import java.nio.file._
 import java.nio.file.attribute.PosixFilePermission
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
-import org.apache.commons.pool2.impl.{DefaultPooledObject, SoftReferenceObjectPool}
-import org.apache.commons.pool2.{BasePooledObjectFactory, PooledObject}
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectPool }
+import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
@@ -42,8 +42,8 @@ class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
 }
 
 /**
-  * This class is responsible for creating and managing a TSDB client instance
-  */
+ * This class is responsible for creating and managing a TSDB client instance
+ */
 object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
@@ -63,25 +63,25 @@ object TSDBClientManager {
   private[opentsdb] var asyncConfig_ : Option[shaded.org.hbase.async.Config] = None
 
   /**
-    *
-    * @param keytabData   the keytab path
-    * @param principal    the principal
-    * @param baseConf     the configuration base used by this spark context
-    * @param tsdbTable    the tsdb table
-    * @param tsdbUidTable the tsdb-uid table
-    * @param saltWidth    the salting prefix size
-    * @param saltBuckets  the number of buckets
-    */
+   *
+   * @param keytabData   the keytab path
+   * @param principal    the principal
+   * @param baseConf     the configuration base used by this spark context
+   * @param tsdbTable    the tsdb table
+   * @param tsdbUidTable the tsdb-uid table
+   * @param saltWidth    the salting prefix size
+   * @param saltBuckets  the number of buckets
+   */
   def init(
-            keytabLocalTempDir: Option[String],
-            keytabData: Option[Broadcast[Array[Byte]]],
-            principal: Option[String],
-            baseConf: Configuration,
-            tsdbTable: String,
-            tsdbUidTable: String,
-            saltWidth: Int,
-            saltBuckets: Int
-          ): Unit = synchronized {
+    keytabLocalTempDir: Option[String],
+    keytabData: Option[Broadcast[Array[Byte]]],
+    principal: Option[String],
+    baseConf: Configuration,
+    tsdbTable: String,
+    tsdbUidTable: String,
+    saltWidth: Int,
+    saltBuckets: Int
+  ): Unit = synchronized {
     if (config_.isEmpty || asyncConfig_.isEmpty) {
       log.info("Initialising the OpenTSDBClientManager")
       val configuration: Configuration = baseConf

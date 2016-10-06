@@ -21,8 +21,6 @@ import scala.util.Random
   --conf spark.executor.extraClassPath=/etc/hbase/conf \
   --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/tmp/jaas.conf \
   --master yarn --deploy-mode client \
-  --keytab dgreco.keytab \
-  --principal dgreco@DGRECO-MBP.LOCAL \
   --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
  */
 
