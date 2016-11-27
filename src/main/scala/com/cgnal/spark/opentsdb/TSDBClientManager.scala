@@ -116,7 +116,7 @@ object TSDBClientManager {
         Files.write(Paths.get(keytabPath), byteArray)
 
         Files.deleteIfExists(Paths.get(s"$kdir/jaas.conf"))
-        val jaasFile = Files.createFile(FileSystems.getDefault().getPath(s"$kdir/jaas.conf"))
+        val jaasFile = Files.createFile(FileSystems.getDefault.getPath(s"$kdir/jaas.conf"))
         Files.setPosixFilePermissions(jaasFile, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE).asJava)
         val jaasConf =
           s"""AsynchbaseClient {
@@ -140,7 +140,7 @@ object TSDBClientManager {
         asyncConfig.overrideConfig("hbase.sasl.clientconfig", "AsynchbaseClient")
         asyncConfig.overrideConfig("hbase.rpc.protection", configuration.get("hbase.rpc.protection"))
         Runtime.getRuntime.addShutdownHook(new Thread(new Runnable {
-          override def run() = {
+          override def run(): Unit = {
             Files.deleteIfExists(keytabFile)
             Files.deleteIfExists(jaasFile)
             try {
@@ -158,6 +158,6 @@ object TSDBClientManager {
     }
   }
 
-  def stop() = pool.close()
+  def stop(): Unit = pool.close()
 
 }
