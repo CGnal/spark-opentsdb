@@ -11,12 +11,12 @@ import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
 import net.opentsdb.core.TSDB
-import org.apache.hadoop.hbase.{ HBaseConfiguration, TableName }
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.mapreduce.{ IdentityTableMapper, TableInputFormat, TableMapReduceUtil }
+import org.apache.hadoop.hbase.{ HBaseConfiguration, TableName }
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.security.UserGroupInformation
@@ -36,6 +36,7 @@ package object opentsdb {
   private def registerCallback(deferred: Deferred[AnyRef]): Unit = {
     deferred.addCallback(new Callback[Unit, AnyRef] {
       override def call(t: AnyRef): Unit = {
+        log.trace(s"Added a data point")
       }
     })
     deferred.addErrback(new Callback[Unit, Throwable] {
@@ -217,7 +218,9 @@ package object opentsdb {
       val conf = new JobConf(HBaseConfiguration.create(sparkContext.hadoopConfiguration))
       val job = Job.getInstance(conf)
       TableMapReduceUtil.initTableMapperJob(tableName, scan, classOf[IdentityTableMapper], null, null, job)
-      conf.getCredentials.addAll { UserGroupInformation.getCurrentUser.getCredentials }
+      conf.getCredentials.addAll {
+        UserGroupInformation.getCurrentUser.getCredentials
+      }
       sparkContext.newAPIHadoopRDD(
         job.getConfiguration,
         classOf[TableInputFormat],

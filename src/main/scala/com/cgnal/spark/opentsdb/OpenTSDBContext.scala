@@ -51,7 +51,7 @@ object OpenTSDBContext {
   var tsdbTable = "tsdb"
 
   /**
-   * The HBase table containing the various IDs for tags amnd metric names
+   * The HBase table containing the various IDs for tags and metric names
    */
   var tsdbUidTable = "tsdb-uid"
 
