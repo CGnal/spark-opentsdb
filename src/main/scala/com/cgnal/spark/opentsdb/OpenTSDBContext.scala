@@ -454,24 +454,24 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         v1 = new Iterator[DataPoint[Double]] {
-          override def hasNext: Boolean =
-            if (!it.hasNext) {
-              log.trace("iterating done, calling shutdown on the TSDB client instance")
-              TSDBClientManager.pool.returnObject(tsdb)
-              false
-            } else
-              it.hasNext
+        override def hasNext: Boolean =
+          if (!it.hasNext) {
+            log.trace("iterating done, calling shutdown on the TSDB client instance")
+            TSDBClientManager.pool.returnObject(tsdb)
+            false
+          } else
+            it.hasNext
 
-          override def next(): DataPoint[Double] = {
-            val row = it.next()
-            DataPoint(
-              row.getAs[String]("metric"),
-              row.getAs[Timestamp]("timestamp").getTime,
-              row.getAs[Double]("value"),
-              row.getAs[Map[String, String]]("tags")
-            )
-          }
-        }, v2 = tsdb
+        override def next(): DataPoint[Double] = {
+          val row = it.next()
+          DataPoint(
+            row.getAs[String]("metric"),
+            row.getAs[Timestamp]("timestamp").getTime,
+            row.getAs[Double]("value"),
+            row.getAs[Map[String, String]]("tags")
+          )
+        }
+      }, v2 = tsdb
       )
     })
   }
