@@ -103,12 +103,12 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
   /**
    * @return the keytab path for accessing the secure HBase
    */
-  def keytab = keytabData_.getOrElse(throw new Exception("keytab has not been defined"))
+  def keytab: Broadcast[Array[Byte]] = keytabData_.getOrElse(throw new Exception("keytab has not been defined"))
 
   /**
    * @param keytab the path of the file containing the keytab
    */
-  def keytab_=(keytab: String) = {
+  def keytab_=(keytab: String): Unit = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
     keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
@@ -117,19 +117,19 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
   /**
    * @return
    */
-  def keytabLocalTempDir = keytabLocalTempDir_.getOrElse(throw new Exception("keytabLocalTempDir has not been defined"))
+  def keytabLocalTempDir: String = keytabLocalTempDir_.getOrElse(throw new Exception("keytabLocalTempDir has not been defined"))
 
-  def keytabLocalTempDir_=(dir: String) = keytabLocalTempDir_ = Some(dir)
+  def keytabLocalTempDir_=(dir: String): Unit = keytabLocalTempDir_ = Some(dir)
 
   /**
    * @return the Kerberos principal
    */
-  def principal = principal_.getOrElse(throw new Exception("principal has not been defined"))
+  def principal: String = principal_.getOrElse(throw new Exception("principal has not been defined"))
 
   /**
    * @param principal the kerberos principal to be used in combination with the keytab
    */
-  def principal_=(principal: String) = principal_ = Some(principal)
+  def principal_=(principal: String): Unit = principal_ = Some(principal)
 
   /**
    * It loads multiple OpenTSDB timeseries into a [[com.cloudera.sparkts.TimeSeriesRDD]]
@@ -302,11 +302,11 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
 
-        val tsdb = TSDBClientManager.pool.borrowObject()
+        val tsdb: TSDB = TSDBClientManager.pool.borrowObject()
 
-        val i = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
+        val i: Iterator[Iterator[DataPoint[_ <: AnyVal]]] = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
-        override def hasNext =
+        override def hasNext: Boolean =
           if (!i.hasNext) {
             log.trace("iterating done, calling shutdown on the TSDB client instance")
             TSDBClientManager.pool.returnObject(tsdb)
@@ -314,7 +314,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
           } else
             i.hasNext
 
-        override def next() = i.next()
+        override def next(): Iterator[DataPoint[_ <: AnyVal]] = i.next()
       }
     }, preservesPartitioning = true)
 
@@ -411,7 +411,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[T]] {
-          override def hasNext =
+          override def hasNext: Boolean =
             if (!it.hasNext) {
               log.trace("iterating done, calling shutdown on the TSDB client instance")
               TSDBClientManager.pool.returnObject(tsdb)
@@ -419,7 +419,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
             } else
               it.hasNext
 
-          override def next() = it.next()
+          override def next(): DataPoint[T] = it.next()
         }, tsdb
       )
     })
@@ -453,8 +453,8 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
       )
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
-        new Iterator[DataPoint[Double]] {
-          override def hasNext =
+        v1 = new Iterator[DataPoint[Double]] {
+          override def hasNext: Boolean =
             if (!it.hasNext) {
               log.trace("iterating done, calling shutdown on the TSDB client instance")
               TSDBClientManager.pool.returnObject(tsdb)
@@ -462,7 +462,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
             } else
               it.hasNext
 
-          override def next() = {
+          override def next(): DataPoint[Double] = {
             val row = it.next()
             DataPoint(
               row.getAs[String]("metric"),
@@ -471,7 +471,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
               row.getAs[Map[String, String]]("tags")
             )
           }
-        }, tsdb
+        }, v2 = tsdb
       )
     })
   }
@@ -501,7 +501,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
             val tsdb = TSDBClientManager.pool.borrowObject()
             writeFunc(
               new Iterator[DataPoint[T]] {
-                override def hasNext =
+                override def hasNext: Boolean =
                   if (!it.hasNext) {
                     log.trace("iterating done, calling shutdown on the TSDB client instance")
                     TSDBClientManager.pool.returnObject(tsdb)
@@ -509,7 +509,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
                   } else
                     it.hasNext
 
-                override def next() = it.next()
+                override def next(): DataPoint[T] = it.next()
               }, tsdb
             )
         }

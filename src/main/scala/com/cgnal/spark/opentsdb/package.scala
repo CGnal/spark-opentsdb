@@ -40,7 +40,7 @@ package object opentsdb {
       }
     })
     deferred.addErrback(new Callback[Unit, Throwable] {
-      override def call(t: Throwable) = {
+      override def call(t: Throwable): Unit = {
         log.error("Error in adding a data point", t)
       }
     })
@@ -189,7 +189,7 @@ package object opentsdb {
 
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
 
-    def toDF(implicit sqlContext: SQLContext) = {
+    def toDF(implicit sqlContext: SQLContext): DataFrame = {
       val df = rdd.map {
         dp =>
           Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)

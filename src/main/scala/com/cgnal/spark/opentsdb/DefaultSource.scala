@@ -76,7 +76,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
   /**
    * Creates a relation and inserts data to specified table.
    *
-   * @param sqlContext
+   * @param sqlContext The Spark SQL Context
    * @param mode       Only Append mode is supported. It will upsert or insert data
    *                   to an existing table, depending on the upsert parameter.
    * @param parameters Necessary parameters for OpenTSDB
@@ -172,7 +172,7 @@ object DefaultSourceConfigurator extends OpenTSDBConfigurator with Serializable 
     conf
   }
 
-  def configuration = _configuration match {
+  def configuration: Configuration = _configuration match {
     case Some(conf) => conf
     case None | null => updateConf()
   }
