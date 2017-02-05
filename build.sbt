@@ -90,7 +90,7 @@ val sparkAvroVersion = "1.1.0-cdh5.7.1"
 
 val scalaTestVersion = "3.0.0"
 
-val openTSDBVersion = "2.2.0"
+val openTSDBVersion = "2.3.0"
 
 val sparkTSVersion = "0.3.0"
 

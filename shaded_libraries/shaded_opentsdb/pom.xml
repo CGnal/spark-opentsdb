@@ -6,7 +6,7 @@
 
     <properties>
         <asynchbase-version>1.7.1</asynchbase-version>
-        <opentsdb-version>2.2.0</opentsdb-version>
+        <opentsdb-version>2.3.0</opentsdb-version>
     </properties>
 
     <modelVersion>4.0.0</modelVersion>
