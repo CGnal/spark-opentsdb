@@ -10,8 +10,8 @@ import java.sql.Timestamp
 import java.time.Instant
 
 import com.cgnal.spark.opentsdb._
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{ SQLContext, SparkSession }
 
 import scala.util.Random
 
@@ -69,11 +69,9 @@ object Main extends App {
         setMaster("local")
   }
 
-  val sparkContext = new SparkContext(conf)
+  implicit val sparkSession: SparkSession = SparkSession.builder().config(conf).getOrCreate()
 
-  sparkContext.setLogLevel("ERROR")
-
-  implicit val sqlContext: SQLContext = new SQLContext(sparkContext)
+  sparkSession.sparkContext.setLogLevel("ERROR")
 
   val ts = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
   val N = 1000000
@@ -85,12 +83,14 @@ object Main extends App {
     point = DataPoint(s"mymetric${r.nextInt(M)}", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
-  val rdd = sparkContext.parallelize[DataPoint[Double]](points)
+  val rdd = sparkSession.sparkContext.parallelize[DataPoint[Double]](points)
 
   OpenTSDBContext.saltWidth = 1
   OpenTSDBContext.saltBuckets = 4
 
   val start = System.currentTimeMillis()
+
+  implicit val sqlContext: SQLContext = sparkSession.sqlContext
   rdd.toDF.write.options(Map(
     "opentsdb.keytabLocalTempDir" -> "/tmp",
     "opentsdb.keytab" -> args(1),
@@ -103,7 +103,7 @@ object Main extends App {
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
 
   val tot = (0 until M).map(i => {
-    val df = sqlContext.read.options(Map(
+    val df = sparkSession.read.options(Map(
       "opentsdb.metric" -> s"mymetric$i",
       "opentsdb.tags" -> "key1->value1,key2->value2",
       "opentsdb.keytabLocalTempDir" -> "/tmp",
@@ -120,5 +120,5 @@ object Main extends App {
 
   println(tot)
 
-  sparkContext.stop()
+  sparkSession.stop()
 }

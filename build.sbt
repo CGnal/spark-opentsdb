@@ -10,11 +10,11 @@ organization := "com.cgnal.spark"
 
 name := "spark-opentsdb"
 
-version in ThisBuild := "1.0"
+version in ThisBuild := "2.0"
 
 val assemblyName = "spark-opentsdb-assembly"
 
-scalaVersion := "2.10.6"
+scalaVersion in ThisBuild := "2.11.8"
 
 ivyScala := ivyScala.value map {
   _.copy(overrideScalaVersion = true)
@@ -42,7 +42,7 @@ scalacOptions ++= Seq(
   "-Xfuture"
 )
 
-scalacOptions in (Compile, doc) ++= Seq(
+scalacOptions in(Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 
@@ -80,19 +80,15 @@ wartremoverErrors ++= Seq(
   Wart.While
 )
 
-val sparkVersion = "1.6.0-cdh5.7.1"
+val sparkVersion = "2.0.0.cloudera1"
 
-val hadoopVersion = "2.6.0-cdh5.7.1"
+val hadoopVersion = "2.6.0-cdh5.9.0"
 
-val hbaseVersion = "1.2.0-cdh5.7.1"
+val hbaseVersion = "1.2.0-cdh5.9.0"
 
-val sparkAvroVersion = "1.1.0-cdh5.7.1"
-
-val scalaTestVersion = "3.0.0"
+val scalaTestVersion = "3.0.1"
 
 val openTSDBVersion = "2.3.0"
-
-val sparkTSVersion = "0.3.0"
 
 val commonsPoolVersion = "2.4.2"
 
@@ -140,7 +136,6 @@ val hbaseExcludes =
     exclude("commons-beanutils", "commons-beanutils")
 
 val assemblyDependencies = Seq(
-  sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % "compile"),
   hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
@@ -191,29 +186,29 @@ val hadoopHBaseExcludes =
 val header1 = (
   HeaderPattern.cStyleBlockComment,
   """|/*
-    | * Copyright 2016 CGnal S.p.A.
-    | *
-    | */
-    |
-    |""".stripMargin
-  )
+     | * Copyright 2016 CGnal S.p.A.
+     | *
+     | */
+     |
+     |""".stripMargin
+)
 
 val header2 = (
   HeaderPattern.hashLineComment,
   """|#
-    |# Copyright 2016 CGnal S.p.A.
-    |#
-    |#
-    |
-    |""".stripMargin
-  )
+     |# Copyright 2016 CGnal S.p.A.
+     |#
+     |#
+     |
+     |""".stripMargin
+)
 
 lazy val root = (project in file(".")).
   configs(IntegrationTest).
   settings(Defaults.itSettings: _*).
   settings(
     libraryDependencies ++= Seq(
-      hadoopHBaseExcludes("org.scalatest" % "scalatest_2.10" % scalaTestVersion % "it,test"),
+      hadoopHBaseExcludes("org.scalatest" %% "scalatest" % scalaTestVersion % "it,test"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "it,test" classifier "tests"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "it,test" classifier "tests"),
       hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "it,test" classifier "tests"
@@ -250,8 +245,8 @@ lazy val projectAssembly = (project in file("assembly")).
     },
     assemblyMergeStrategy in assembly := {
       case "org/apache/spark/unused/UnusedStubClass.class" => MergeStrategy.last
-      case s if s contains "META-INF"                      => MergeStrategy.discard
-      case x                                               => MergeStrategy.last
+      case s if s contains "META-INF" => MergeStrategy.discard
+      case x => MergeStrategy.last
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
     libraryDependencies in assembly := assemblyDependencies
@@ -266,4 +261,4 @@ val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
 
 buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
-compile in Compile <<= compile in Compile dependsOn buildShadedLibraries  //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project
+compile in Compile <<= compile in Compile dependsOn buildShadedLibraries //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project

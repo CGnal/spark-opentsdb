@@ -5,24 +5,22 @@
 
 package com.cgnal.spark.opentsdb
 
-import scala.collection.convert.decorateAsScala._
-
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.{ HBaseConfiguration, HBaseTestingUtility, TableName }
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming.{ Milliseconds, StreamingContext }
 import org.apache.spark.{ SparkConf, SparkContext }
 import org.scalatest.{ BeforeAndAfterAll, MustMatchers, WordSpec }
 import shaded.org.hbase.async.HBaseClient
 
+import scala.collection.convert.decorateAsScala._
+
 @SuppressWarnings(Array("org.wartremover.warts.Var"))
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   val hbaseUtil = new HBaseTestingUtility()
-
-  var sparkContext: SparkContext = _
 
   var streamingContext: StreamingContext = _
 
@@ -30,7 +28,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
   var openTSDBContext: OpenTSDBContext = _
 
-  var sqlContext: SQLContext = _
+  implicit var sparkSession: SparkSession = _
 
   var hbaseAsyncClient: HBaseClient = _
 
@@ -50,13 +48,12 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     val quorum = baseConf.get("hbase.zookeeper.quorum")
     val port = baseConf.get("hbase.zookeeper.property.clientPort")
 
-    sparkContext = new SparkContext(conf)
+    sparkSession = SparkSession.builder().config(conf).getOrCreate()
 
-    HBaseConfiguration.merge(sparkContext.hadoopConfiguration, baseConf)
+    HBaseConfiguration.merge(sparkSession.sparkContext.hadoopConfiguration, baseConf)
 
-    streamingContext = new StreamingContext(sparkContext, Milliseconds(200))
-    sqlContext = new SQLContext(sparkContext)
-    openTSDBContext = new OpenTSDBContext(sqlContext, TestOpenTSDBConfigurator(baseConf))
+    streamingContext = new StreamingContext(sparkSession.sparkContext, Milliseconds(200))
+    openTSDBContext = new OpenTSDBContext(sparkSession.sqlContext, TestOpenTSDBConfigurator(baseConf))
     hbaseUtil.createTable(TableName.valueOf("tsdb-uid"), Array("id", "name"))
     hbaseUtil.createTable(TableName.valueOf("tsdb"), Array("t"))
     hbaseUtil.createTable(TableName.valueOf("tsdb-tree"), Array("t"))
@@ -77,7 +74,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   override def afterAll(): Unit = {
     streamingContext.stop(false)
     streamingContext.awaitTermination()
-    sparkContext.stop()
+    sparkSession.stop()
     tsdb.shutdown()
     hbaseUtil.deleteTable("tsdb-uid")
     hbaseUtil.deleteTable("tsdb")

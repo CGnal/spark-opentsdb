@@ -12,7 +12,7 @@ import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext, SaveMode }
+import org.apache.spark.sql._
 
 /**
  * Data source for integration with Spark's [[DataFrame]] API.

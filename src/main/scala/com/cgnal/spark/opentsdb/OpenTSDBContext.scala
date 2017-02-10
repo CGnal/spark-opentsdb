@@ -8,10 +8,8 @@ package com.cgnal.spark.opentsdb
 import java.io.File
 import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
-import java.time.{ Instant, LocalDateTime, ZoneId, ZonedDateTime }
 import java.util
 
-import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
 import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
@@ -130,55 +128,6 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
    * @param principal the kerberos principal to be used in combination with the keytab
    */
   def principal_=(principal: String): Unit = principal_ = Some(principal)
-
-  /**
-   * It loads multiple OpenTSDB timeseries into a [[com.cloudera.sparkts.TimeSeriesRDD]]
-   *
-   * @param interval  an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                  the second long is the end of the interval (exclusive).
-   *                  This method will retrieve all the metrics included into this interval.
-   * @param frequency the interval frequency, see `Frequency`
-   * @param metrics   a list of pair metric name, tags
-   * @return a [[com.cloudera.sparkts.TimeSeriesRDD]] instance
-   */
-  def loadTimeSeriesRDD(
-    interval: Option[(Long, Long)],
-    frequency: Frequency,
-    metrics: List[(String, Map[String, String])]
-  ): TimeSeriesRDD[String] = {
-
-    val startDateEpochInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._1.toLong * 1000).getTime
-    val endDateEpochInInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._2.toLong * 1000).getTime - 1
-
-    LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
-
-    val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
-    val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
-
-    val index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC")).atZone(ZoneId.of("UTC"))
-
-    val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
-      m._1,
-      m._2,
-      interval
-    ))
-
-    val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
-    val otherDFs = dfs.drop(1)
-
-    val observations = if (otherDFs.isEmpty)
-      initDF
-    else
-      otherDFs.fold(initDF)((df1, df2) => df1.unionAll(df2))
-
-    TimeSeriesRDD.timeSeriesRDDFromObservations(
-      index,
-      observations,
-      "timestamp",
-      "metric",
-      "value"
-    )
-  }
 
   /**
    * This method loads a time series from OpenTSDB as a [[org.apache.spark.sql.DataFrame]]

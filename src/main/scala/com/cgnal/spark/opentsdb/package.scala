@@ -183,18 +183,18 @@ package object opentsdb {
     def opentsdb: DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
-  implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
+  implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter[Row]) {
     def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
 
-    def toDF(implicit sqlContext: SQLContext): DataFrame = {
+    def toDF(implicit sparkSession: SparkSession): DataFrame = {
       val df = rdd.map {
         dp =>
           Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)
       }
-      sqlContext.createDataFrame(df, StructType(
+      sparkSession.createDataFrame(df, StructType(
         Array(
           StructField("timestamp", TimestampType, nullable = false),
           StructField("metric", StringType, nullable = false),
