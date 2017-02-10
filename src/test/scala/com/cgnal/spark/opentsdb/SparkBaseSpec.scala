@@ -53,7 +53,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
     HBaseConfiguration.merge(sparkSession.sparkContext.hadoopConfiguration, baseConf)
 
     streamingContext = new StreamingContext(sparkSession.sparkContext, Milliseconds(200))
-    openTSDBContext = new OpenTSDBContext(sparkSession.sqlContext, TestOpenTSDBConfigurator(baseConf))
+    openTSDBContext = new OpenTSDBContext(sparkSession, TestOpenTSDBConfigurator(baseConf))
     hbaseUtil.createTable(TableName.valueOf("tsdb-uid"), Array("id", "name"))
     hbaseUtil.createTable(TableName.valueOf("tsdb"), Array("t"))
     hbaseUtil.createTable(TableName.valueOf("tsdb-tree"), Array("t"))

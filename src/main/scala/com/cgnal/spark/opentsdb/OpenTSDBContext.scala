@@ -18,7 +18,7 @@ import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
+import org.apache.spark.sql.{ DataFrame, Row, SparkSession }
 import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
@@ -68,10 +68,10 @@ object OpenTSDBContext {
 /**
  * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
  *
- * @param sqlContext    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
+ * @param sparkSession    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
  * @param configurator  The Configurator instance that will be used to create the configuration
  */
-class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
+class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
@@ -109,7 +109,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
   def keytab_=(keytab: String): Unit = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
-    keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
+    keytabData_ = Some(sparkSession.sparkContext.broadcast(byteArray))
   }
 
   /**
@@ -162,7 +162,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
           dp.tags
         )
     }
-    sqlContext.createDataFrame(rowRDD, schema)
+    sparkSession.createDataFrame(rowRDD, schema)
   }
 
   /**
@@ -187,7 +187,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
     log.trace("Loading metric and tags uids")
 
     val uidScan = getUIDScan(metricName, tags)
-    val tsdbUID = sqlContext.sparkContext.loadTable(tsdbUidTable, uidScan)
+    val tsdbUID = sparkSession.sparkContext.loadTable(tsdbUidTable, uidScan)
     val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
@@ -211,7 +211,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
         tagVUIDs,
         interval
       )
-      sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
+      sparkSession.sparkContext.loadTable(tsdbTable, metricScan)
     } else {
       assert(saltWidth == 1)
       assert(saltBuckets >= 1)
@@ -226,7 +226,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
             tagVUIDs,
             interval
           )
-          sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
+          sparkSession.sparkContext.loadTable(tsdbTable, metricScan)
       } toList
 
       val initRDD = rdds.headOption.getOrElse(throw new Exception("There must be at least one RDD"))

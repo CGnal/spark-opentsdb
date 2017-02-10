@@ -62,7 +62,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     val principal = parameters.get(PRINCIPAL)
 
-    val openTSDBContext = new OpenTSDBContext(sqlContext)
+    val openTSDBContext = new OpenTSDBContext(SparkSession.builder().getOrCreate())
 
     keytabLocalTempDir.foreach(openTSDBContext.keytabLocalTempDir = _)
 
