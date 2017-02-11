@@ -212,16 +212,16 @@ package object opentsdb {
     )
   }
 
-  implicit class EnrichedSparkContext(sparkContext: SparkContext) {
+  implicit class EnrichedSparkSession(sparkSession: SparkSession) {
 
     def loadTable(tableName: TableName, scan: Scan): RDD[(ImmutableBytesWritable, Result)] = {
-      val conf = new JobConf(HBaseConfiguration.create(sparkContext.hadoopConfiguration))
+      val conf = new JobConf(HBaseConfiguration.create(sparkSession.sparkContext.hadoopConfiguration))
       val job = Job.getInstance(conf)
       TableMapReduceUtil.initTableMapperJob(tableName, scan, classOf[IdentityTableMapper], null, null, job)
       conf.getCredentials.addAll {
         UserGroupInformation.getCurrentUser.getCredentials
       }
-      sparkContext.newAPIHadoopRDD(
+      sparkSession.sparkContext.newAPIHadoopRDD(
         job.getConfiguration,
         classOf[TableInputFormat],
         classOf[ImmutableBytesWritable],

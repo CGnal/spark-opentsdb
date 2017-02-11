@@ -68,7 +68,7 @@ object OpenTSDBContext {
 /**
  * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
  *
- * @param sparkSession    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
+ * @param sparkSession  The sparkSession needed for creating the dataframes, the spark context it's obtained from this sql context
  * @param configurator  The Configurator instance that will be used to create the configuration
  */
 class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
@@ -187,7 +187,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
     log.trace("Loading metric and tags uids")
 
     val uidScan = getUIDScan(metricName, tags)
-    val tsdbUID = sparkSession.sparkContext.loadTable(tsdbUidTable, uidScan)
+    val tsdbUID = sparkSession.loadTable(tsdbUidTable, uidScan)
     val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
@@ -211,7 +211,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         tagVUIDs,
         interval
       )
-      sparkSession.sparkContext.loadTable(tsdbTable, metricScan)
+      sparkSession.loadTable(tsdbTable, metricScan)
     } else {
       assert(saltWidth == 1)
       assert(saltBuckets >= 1)
@@ -226,7 +226,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
             tagVUIDs,
             interval
           )
-          sparkSession.sparkContext.loadTable(tsdbTable, metricScan)
+          sparkSession.loadTable(tsdbTable, metricScan)
       } toList
 
       val initRDD = rdds.headOption.getOrElse(throw new Exception("There must be at least one RDD"))
