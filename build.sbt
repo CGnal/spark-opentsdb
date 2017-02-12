@@ -136,11 +136,6 @@ val hbaseExcludes =
     exclude("commons-beanutils", "commons-beanutils")
 
 val assemblyDependencies = Seq(
-  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
   "org.apache.commons" % "commons-pool2" % commonsPoolVersion % "compile",
   "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "compile"
 )
@@ -158,6 +153,11 @@ libraryDependencies ++= Seq(
   sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % scope),
   sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % scope),
   sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % scope),
@@ -167,6 +167,17 @@ libraryDependencies ++= Seq(
 ) ++ assemblyDependencies
 
 isSnapshot := true
+
+//Trick to make Intellij/IDEA happy
+//We set all provided dependencies to none, so that they are included in the classpath of root module
+libraryDependencies := libraryDependencies.value.map{
+  module =>
+    if (module.configurations.equals(Some("provided"))) {
+      module.copy(configurations = None)
+    } else {
+      module
+    }
+}
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
 run in Compile <<= Defaults.runTask(fullClasspath in Compile, mainClass in(Compile, run), runner in(Compile, run))

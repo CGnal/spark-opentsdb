@@ -16,12 +16,14 @@ import org.apache.spark.sql.{ SQLContext, SparkSession }
 import scala.util.Random
 
 /*
-  spark-submit --executor-memory 1200M \
+  spark2-submit \
+  --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
-  --conf spark.executor.extraClassPath=/etc/hbase/conf \
+  --conf spark.driver.extraClassPath=/etc/hbase/conf:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-server-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-client-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-hadoop-compat-1.2.0-cdh5.10.0.jar \
+  --conf spark.executor.extraClassPath=/etc/hbase/conf:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-server-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-client-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-hadoop-compat-1.2.0-cdh5.10.0.jar \
   --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/tmp/jaas.conf \
   --master yarn --deploy-mode client \
-  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
+  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-2.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
  */
 
 object Main extends App {
@@ -38,7 +40,7 @@ object Main extends App {
 
   val uberJarLocation = {
     val location = getJar(Main.getClass)
-    if (new File(location).isDirectory) s"${System.getProperty("user.dir")}/assembly/target/scala-2.10/spark-opentsdb-assembly-1.0.jar" else location
+    if (new File(location).isDirectory) s"${System.getProperty("user.dir")}/assembly/target/scala-2.11/spark-opentsdb-assembly-2.0.jar" else location
   }
 
   if (master.isEmpty) {
