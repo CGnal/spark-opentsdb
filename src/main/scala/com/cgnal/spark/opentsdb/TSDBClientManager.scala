@@ -103,7 +103,7 @@ object TSDBClientManager {
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      config.overrideConfig("tsd.core.auto_create_metrics", "false")
       if (saltWidth > 0) {
         config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
         config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)

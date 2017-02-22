@@ -79,8 +79,8 @@ object OpenTSDBContext {
 /**
  * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
  *
- * @param sparkSession  The sparkSession needed for creating the dataframes, the spark context it's obtained from this sql context
- * @param configurator  The Configurator instance that will be used to create the configuration
+ * @param sparkSession The sparkSession needed for creating the dataframes, the spark context it's obtained from this sql context
+ * @param configurator The Configurator instance that will be used to create the configuration
  */
 class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
 
@@ -174,6 +174,54 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         )
     }
     sparkSession.createDataFrame(rowRDD, schema)
+  }
+
+  /**
+    * This method creates a list of metric names
+    *
+    * @param metricNames the metric name
+    */
+  def createMetrics(metricNames: List[String]): Unit = {
+    val rdd: RDD[Int] = sparkSession.sparkContext.parallelize[Int](1 to 1, 1)
+
+    val toexecute = rdd.mapPartitionsWithIndex[Int]((index, iterator) => {
+      TSDBClientManager.init(
+        keytabLocalTempDir = keytabLocalTempDir_,
+        keytabData = keytabData_,
+        principal = principal_,
+        baseConf = hbaseConfiguration,
+        tsdbTable = tsdbTable,
+        tsdbUidTable = tsdbUidTable,
+        saltWidth = saltWidth,
+        saltBuckets = saltBuckets
+      )
+      new Iterator[Int] {
+
+        val tsdb: TSDB = TSDBClientManager.pool.borrowObject()
+
+        @SuppressWarnings(Array("org.wartremover.warts.Var"))
+        var firstTime = true
+
+        @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
+        override def hasNext: Boolean =
+          if (firstTime) {
+            firstTime = false
+            true
+          } else {
+            TSDBClientManager.pool.returnObject(tsdb)
+            firstTime
+          }
+
+        override def next(): Int = {
+          if (index == 0) {
+            metricNames.foreach(tsdb.assignUid("metric", _))
+          }
+          index
+        }
+      }
+    }, preservesPartitioning = true)
+
+    val _ = toexecute.count()
   }
 
   /**

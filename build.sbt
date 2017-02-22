@@ -166,18 +166,20 @@ libraryDependencies ++= Seq(
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % scope)
 ) ++ assemblyDependencies
 
-isSnapshot := true
-
 //Trick to make Intellij/IDEA happy
 //We set all provided dependencies to none, so that they are included in the classpath of root module
-libraryDependencies := libraryDependencies.value.map{
-  module =>
-    if (module.configurations.equals(Some("provided"))) {
-      module.copy(configurations = None)
-    } else {
-      module
-    }
-}
+lazy val mainRunner = project.in(file("mainRunner")).dependsOn(RootProject(file("."))).settings(
+  // we set all provided dependencies to none, so that they are included in the classpath of mainRunner
+  libraryDependencies := (libraryDependencies in RootProject(file("."))).value.map{
+    module =>
+      if (module.configurations.equals(Some("provided"))) {
+        module.copy(configurations = None)
+      } else {
+        module
+      }
+  }
+)
+isSnapshot := true
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
 run in Compile <<= Defaults.runTask(fullClasspath in Compile, mainClass in(Compile, run), runner in(Compile, run))
@@ -199,25 +201,25 @@ lazy val root = (project in file(".")).
   settings(Defaults.itSettings: _*).
   settings(
     libraryDependencies ++= Seq(
-      hadoopHBaseExcludes("org.scalatest" %% "scalatest" % scalaTestVersion % "it,test"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "it,test" classifier "tests"
+      hadoopHBaseExcludes("org.scalatest" %% "scalatest" % scalaTestVersion % "test"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "test" classifier "tests"
         exclude("org.apache.hadoop<", "hadoop-hdfs")
         exclude("org.apache.hadoop", "hadoop-minicluster")
         exclude("org.apache.hadoo", "hadoop-client")),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop2-compat" % hbaseVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "it,test"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests"),
-      "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "it,test"
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop2-compat" % hbaseVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "test"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "test" classifier "tests"),
+      "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "test"
     ),
     headers := Map(
       "sbt" -> Apache2_0("2016", "CGnal S.p.A."),
