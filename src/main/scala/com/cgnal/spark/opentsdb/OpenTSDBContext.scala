@@ -215,7 +215,11 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         override def next(): Int = {
           if (index == 0) {
             metrics.foreach(metric => {
-              tsdb.assignUid("metric", metric._1)
+              try {
+                tsdb.assignUid("metric", metric._1)
+              } catch {
+                case _: java.lang.IllegalArgumentException =>
+              }
               metric._2.foreach[Unit](kv => {
                 try {
                   val _ = tsdb.assignUid("tagk", kv._1)
