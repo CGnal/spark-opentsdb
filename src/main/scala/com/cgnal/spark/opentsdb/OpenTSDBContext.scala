@@ -177,11 +177,11 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
   }
 
   /**
-    * This method creates a list of metric names
-    *
-    * @param metricNames the metric name
-    */
-  def createMetrics(metricNames: List[String]): Unit = {
+   * This method creates a list of metric names
+   *
+   * @param metrics the list of metrics
+   */
+  def createMetrics(metrics: List[(String, Map[String, String])]): Unit = {
     val rdd: RDD[Int] = sparkSession.sparkContext.parallelize[Int](1 to 1, 1)
 
     val toexecute = rdd.mapPartitionsWithIndex[Int]((index, iterator) => {
@@ -214,7 +214,21 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
 
         override def next(): Int = {
           if (index == 0) {
-            metricNames.foreach(tsdb.assignUid("metric", _))
+            metrics.foreach(metric => {
+              tsdb.assignUid("metric", metric._1)
+              metric._2.foreach[Unit](kv => {
+                try {
+                  val _ = tsdb.assignUid("tagk", kv._1)
+                } catch {
+                  case _: java.lang.IllegalArgumentException =>
+                }
+                try {
+                  val _ = tsdb.assignUid("tagv", kv._2)
+                } catch {
+                  case _: java.lang.IllegalArgumentException =>
+                }
+              })
+            })
           }
           index
         }

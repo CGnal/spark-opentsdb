@@ -231,7 +231,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "load a timeseries dataframe from OpenTSDB using DefaultSource correctly" in {
 
-      openTSDBContext.createMetrics(List("mymetric1"))
+      openTSDBContext.createMetrics(List(("mymetric1", Map("key1" -> "value1", "key2" -> "value2"))))
 
       for (i <- 0 until 10) {
         val ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
@@ -271,7 +271,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "save timeseries points using DefaultSource correctly" in {
 
-      openTSDBContext.createMetrics(List("mymetric2"))
+      openTSDBContext.createMetrics(List(("mymetric2", Map("key1" -> "value1", "key2" -> "value2"))))
 
       val points = for {
         i <- 0 until 10
@@ -311,7 +311,7 @@ class SparkSpec extends SparkBaseSpec {
   "Spark" must {
     "save timeseries points from a Spark stream correctly" in {
 
-      openTSDBContext.createMetrics(List("mymetric3"))
+      openTSDBContext.createMetrics(List(("mymetric3", Map("key1" -> "value1", "key2" -> "value2"))))
 
       val points = for {
         i <- 0 until 10
