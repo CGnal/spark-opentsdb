@@ -328,13 +328,14 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
 
+        log.trace("getting the TSDB client instance from the pool")
         val tsdb: TSDB = TSDBClientManager.pool.borrowObject()
 
         val i: Iterator[Iterator[DataPoint[_ <: AnyVal]]] = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
         override def hasNext: Boolean =
           if (!i.hasNext) {
-            log.trace("iterating done, calling shutdown on the TSDB client instance")
+            log.trace("iterating done, returning the TSDB client instance to the pool")
             TSDBClientManager.pool.returnObject(tsdb)
             false
           } else
@@ -434,12 +435,13 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
+      log.trace("getting the TSDB client instance from the pool")
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[T]] {
           override def hasNext: Boolean =
             if (!it.hasNext) {
-              log.trace("iterating done, calling shutdown on the TSDB client instance")
+              log.trace("iterating done, returning the TSDB client instance to the pool")
               TSDBClientManager.pool.returnObject(tsdb)
               false
             } else
@@ -477,12 +479,13 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
+      log.trace("getting the TSDB client instance from the pool")
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         v1 = new Iterator[DataPoint[Double]] {
         override def hasNext: Boolean =
           if (!it.hasNext) {
-            log.trace("iterating done, calling shutdown on the TSDB client instance")
+            log.trace("iterating done, returning the TSDB client instance to the pool")
             TSDBClientManager.pool.returnObject(tsdb)
             false
           } else
@@ -524,12 +527,13 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
               saltWidth = saltWidth,
               saltBuckets = saltBuckets
             )
+            log.trace("getting the TSDB client instance from the pool")
             val tsdb = TSDBClientManager.pool.borrowObject()
             writeFunc(
               new Iterator[DataPoint[T]] {
                 override def hasNext: Boolean =
                   if (!it.hasNext) {
-                    log.trace("iterating done, calling shutdown on the TSDB client instance")
+                    log.trace("iterating done, returning the TSDB client instance to the pool")
                     TSDBClientManager.pool.returnObject(tsdb)
                     false
                   } else

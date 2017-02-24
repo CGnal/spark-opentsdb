@@ -18,6 +18,7 @@ package com.cgnal.spark
 
 import java.nio.ByteBuffer
 import java.sql.Timestamp
+import java.util
 import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
@@ -37,60 +38,86 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 
 import scala.collection.convert.decorateAsJava._
+import scala.collection.mutable.ListBuffer
 import scala.language.implicitConversions
 
 package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  private def registerCallback(deferred: Deferred[AnyRef]): Unit = {
-    deferred.addCallback(new Callback[Unit, AnyRef] {
-      override def call(t: AnyRef): Unit = {
-        log.trace(s"Added a data point")
-      }
+  private val batchSize = 10
+
+  @inline private def waitForWritingBatch(batch: ListBuffer[Deferred[AnyRef]], size: Int) = {
+    Deferred.groupInOrder(batch.asJava)
+      .addErrback(new Callback[Unit, Exception] {
+        override def call(t: Exception): Unit = {
+          log.error("Error in adding a data point", t)
+        }
+      })
+      .addCallback(new Callback[Unit, util.ArrayList[AnyRef]] {
+        override def call(results: util.ArrayList[AnyRef]): Unit = {
+          assert(results.size() == size)
+          log.trace(s"Added $size data points")
+        }
+      })
+      .join()
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    it.foreach(dp => {
+      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
+      if (batch.size == batchSize)
+        waitForWritingBatch(batch, batchSize)
     })
-    deferred.addErrback(new Callback[Unit, Throwable] {
-      override def call(t: Throwable): Unit = {
-        log.error("Error in adding a data point", t)
-      }
+    waitForWritingBatch(batch, batch.size)
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    it.foreach(dp => {
+      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava))
+      if (batch.size == batchSize)
+        waitForWritingBatch(batch, batchSize)
     })
-    ()
+    waitForWritingBatch(batch, batch.size)
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    it.foreach(dp => {
+      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava))
+      if (batch.size == batchSize)
+        waitForWritingBatch(batch, batchSize)
+    })
+    waitForWritingBatch(batch, batch.size)
   }
 
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addFloatDataPoints(it, tsdb)
   }
 
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addDoubleDataPoints(it, tsdb)
   }
 
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {

@@ -22,7 +22,7 @@ import java.nio.file.attribute.PosixFilePermission
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
-import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectPool }
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool }
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.log4j.Logger
@@ -50,6 +50,12 @@ class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
     pooledTsdb.getObject.shutdown().joinUninterruptibly()
     log.info("About to shutdown the TSDB client instance: done")
   }
+
+  override def passivateObject(pooledTsdb: PooledObject[TSDB]): Unit = {
+    log.info("About to flush the TSDB client instance")
+    pooledTsdb.getObject.flush().joinUninterruptibly()
+    log.info("About to flush the TSDB client instance: done")
+  }
 }
 
 /**
@@ -59,7 +65,7 @@ object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
-  @transient val pool = new SoftReferenceObjectPool[TSDB](new TSDBClientFactory())
+  @transient val pool = new GenericObjectPool[TSDB](new TSDBClientFactory())
 
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))

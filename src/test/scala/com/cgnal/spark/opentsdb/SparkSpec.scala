@@ -24,6 +24,8 @@ import net.opentsdb.tools.FileImporter
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{ FileSystem, Path }
 import org.apache.spark.sql.types._
+import org.scalactic.source.Position
+import org.scalatest.Tag
 
 import scala.collection.convert.decorateAsJava._
 import scala.collection.mutable
@@ -354,5 +356,4 @@ class SparkSpec extends SparkBaseSpec {
       result.foreach(println(_))
     }
   }
-
 }
