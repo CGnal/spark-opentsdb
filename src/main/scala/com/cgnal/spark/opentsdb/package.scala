@@ -19,16 +19,16 @@ package com.cgnal.spark
 import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.util
-import java.util.{Calendar, TimeZone}
+import java.util.{ Calendar, TimeZone }
 
-import com.stumbleupon.async.{Callback, Deferred}
+import com.stumbleupon.async.{ Callback, Deferred }
 import net.opentsdb.core.TSDB
-import org.apache.hadoop.hbase.client.{Result, Scan}
+import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
+import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
-import org.apache.hadoop.hbase.mapreduce.{IdentityTableMapper, TableInputFormat, TableMapReduceUtil}
-import org.apache.hadoop.hbase.{HBaseConfiguration, TableName}
+import org.apache.hadoop.hbase.mapreduce.{ IdentityTableMapper, TableInputFormat, TableMapReduceUtil }
+import org.apache.hadoop.hbase.{ HBaseConfiguration, TableName }
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.security.UserGroupInformation
@@ -45,7 +45,7 @@ package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  @inline private def waitForWritingBatch(batch: ListBuffer[Deferred[AnyRef]], size: Int) = {
+  @inline private def waitForWritingBatch(batch: Seq[Deferred[AnyRef]], size: Int) = {
     if (batch.nonEmpty)
       Deferred.groupInOrder(batch.asJava)
         .addErrback(new Callback[Unit, Exception] {
@@ -62,35 +62,41 @@ package object opentsdb {
         .join()
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    var batch = ListBuffer.empty[Deferred[AnyRef]]
     it.foreach(dp => {
       batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-      if (batch.size == batchSize)
+      if (batch.size == batchSize) {
         waitForWritingBatch(batch, batchSize)
+        batch = ListBuffer.empty[Deferred[AnyRef]]
+      }
     })
     waitForWritingBatch(batch, batch.size)
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    var batch = ListBuffer.empty[Deferred[AnyRef]]
     it.foreach(dp => {
       batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava))
-      if (batch.size == batchSize)
+      if (batch.size == batchSize) {
         waitForWritingBatch(batch, batchSize)
+        batch = ListBuffer.empty[Deferred[AnyRef]]
+      }
     })
     waitForWritingBatch(batch, batch.size)
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    val batch = ListBuffer.empty[Deferred[AnyRef]]
+    var batch = ListBuffer.empty[Deferred[AnyRef]]
     it.foreach(dp => {
       batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava))
-      if (batch.size == batchSize)
+      if (batch.size == batchSize) {
         waitForWritingBatch(batch, batchSize)
+        batch = ListBuffer.empty[Deferred[AnyRef]]
+      }
     })
     waitForWritingBatch(batch, batch.size)
   }
@@ -129,13 +135,13 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
-                                       bucket: Byte,
-                                       tags: Map[String, String],
-                                       metricUID: Array[Byte],
-                                       tagKUIDs: Map[String, Array[Byte]],
-                                       tagVUIDs: Map[String, Array[Byte]],
-                                       interval: Option[(Long, Long)]
-                                     ) = {
+    bucket: Byte,
+    tags: Map[String, String],
+    metricUID: Array[Byte],
+    tagKUIDs: Map[String, Array[Byte]],
+    tagVUIDs: Map[String, Array[Byte]],
+    interval: Option[(Long, Long)]
+  ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
