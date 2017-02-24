@@ -19,16 +19,16 @@ package com.cgnal.spark
 import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.util
-import java.util.{ Calendar, TimeZone }
+import java.util.{Calendar, TimeZone}
 
-import com.stumbleupon.async.{ Callback, Deferred }
+import com.stumbleupon.async.{Callback, Deferred}
 import net.opentsdb.core.TSDB
-import org.apache.hadoop.hbase.client.{ Result, Scan }
+import org.apache.hadoop.hbase.client.{Result, Scan}
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
+import org.apache.hadoop.hbase.filter.{RegexStringComparator, RowFilter}
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
-import org.apache.hadoop.hbase.mapreduce.{ IdentityTableMapper, TableInputFormat, TableMapReduceUtil }
-import org.apache.hadoop.hbase.{ HBaseConfiguration, TableName }
+import org.apache.hadoop.hbase.mapreduce.{IdentityTableMapper, TableInputFormat, TableMapReduceUtil}
+import org.apache.hadoop.hbase.{HBaseConfiguration, TableName}
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.security.UserGroupInformation
@@ -46,19 +46,20 @@ package object opentsdb {
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
   @inline private def waitForWritingBatch(batch: ListBuffer[Deferred[AnyRef]], size: Int) = {
-    Deferred.groupInOrder(batch.asJava)
-      .addErrback(new Callback[Unit, Exception] {
-        override def call(t: Exception): Unit = {
-          log.error("Error in adding a data point", t)
-        }
-      })
-      .addCallback(new Callback[Unit, util.ArrayList[AnyRef]] {
-        override def call(results: util.ArrayList[AnyRef]): Unit = {
-          assert(results.size() == size)
-          log.trace(s"Added $size data points")
-        }
-      })
-      .join()
+    if (batch.nonEmpty)
+      Deferred.groupInOrder(batch.asJava)
+        .addErrback(new Callback[Unit, Exception] {
+          override def call(t: Exception): Unit = {
+            log.error("Error in adding a data point", t)
+          }
+        })
+        .addCallback(new Callback[Unit, util.ArrayList[AnyRef]] {
+          override def call(results: util.ArrayList[AnyRef]): Unit = {
+            assert(results.size() == size)
+            log.trace(s"Added $size data points")
+          }
+        })
+        .join()
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
@@ -128,13 +129,13 @@ package object opentsdb {
   }
 
   private[opentsdb] def getMetricScan(
-    bucket: Byte,
-    tags: Map[String, String],
-    metricUID: Array[Byte],
-    tagKUIDs: Map[String, Array[Byte]],
-    tagVUIDs: Map[String, Array[Byte]],
-    interval: Option[(Long, Long)]
-  ) = {
+                                       bucket: Byte,
+                                       tags: Map[String, String],
+                                       metricUID: Array[Byte],
+                                       tagKUIDs: Map[String, Array[Byte]],
+                                       tagVUIDs: Map[String, Array[Byte]],
+                                       interval: Option[(Long, Long)]
+                                     ) = {
     val tagKKeys = tagKUIDs.keys.toArray
     val tagVKeys = tagVUIDs.keys.toArray
     val ntags = tags.filter(kv => tagKKeys.contains(kv._1) && tagVKeys.contains(kv._2))
