@@ -74,11 +74,6 @@ object OpenTSDBContext {
    */
   var saltBuckets: Int = 0
 
-  /**
-   * The maximum number of DataPoints to be written in a single batch
-   */
-  var batchSize: Int = 10
-
 }
 
 /**
@@ -104,9 +99,6 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var saltBuckets: Int = OpenTSDBContext.saltBuckets
-
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
-  private[opentsdb] var batchSize: Int = OpenTSDBContext.batchSize
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private var keytabData_ : Option[Broadcast[Array[Byte]]] = None
@@ -467,7 +459,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
    * @param timeseries the data frame to be stored
    * @param writeFunc  the implicit writefunc to be used for a specific value type
    */
-  def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB, Int) => Unit): Unit = {
+  def write(timeseries: DataFrame)(implicit writeFunc: (Iterator[DataPoint[Double]], TSDB) => Unit): Unit = {
     assert(timeseries.schema == StructType(
       Array(
         StructField("timestamp", TimestampType, nullable = false),
@@ -508,7 +500,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
             row.getAs[Map[String, String]]("tags")
           )
         }
-      }, v2 = tsdb, batchSize
+      }, v2 = tsdb
       )
     })
   }
@@ -520,7 +512,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
    * @param writeFunc the implicit writefunc to be used for a specific value type
    * @tparam T the actual type of the [[DataPoint]]'s value
    */
-  def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB, Int) => Unit): Unit = {
+  def streamWrite[T <: AnyVal](dstream: DStream[DataPoint[T]])(implicit writeFunc: (Iterator[DataPoint[T]], TSDB) => Unit): Unit = {
     dstream foreachRDD {
       timeseries =>
         timeseries foreachPartition {
@@ -548,7 +540,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
                     it.hasNext
 
                 override def next(): DataPoint[T] = it.next()
-              }, tsdb, batchSize
+              }, tsdb
             )
         }
     }

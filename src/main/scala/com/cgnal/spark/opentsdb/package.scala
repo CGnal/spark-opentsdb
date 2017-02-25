@@ -18,11 +18,10 @@ package com.cgnal.spark
 
 import java.nio.ByteBuffer
 import java.sql.Timestamp
-import java.util
 import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
-import net.opentsdb.core.TSDB
+import net.opentsdb.core.{ TSDB, WritableDataPoints }
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
@@ -36,93 +35,121 @@ import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
+import shaded.org.hbase.async.{ HBaseRpc, PleaseThrottleException, PutRequest }
 
 import scala.collection.convert.decorateAsJava._
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable
 import scala.language.implicitConversions
+
+@SuppressWarnings(Array("org.wartremover.warts.Var"))
+private class ThrottlingCallback(var throttle: Boolean, tsdb: TSDB) extends Callback[Unit, AnyRef] {
+
+  @transient private lazy val log = Logger.getLogger(getClass.getName)
+
+  def call(arg: AnyRef): Unit = {
+    arg match {
+      case ex: PleaseThrottleException =>
+        log.warn("Need to throttle, HBase isn't keeping up.", ex)
+        throttle = true
+        val rpc: HBaseRpc = ex.getFailedRpc
+        rpc match {
+          case op: PutRequest =>
+            tsdb.getClient.put(op)
+        }
+      case ex: Exception =>
+        log.error("Failing in writing a datapoint", ex)
+    }
+    ()
+  }
+}
 
 package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  @inline private def waitForWritingBatch(batch: Seq[Deferred[AnyRef]], size: Int) = {
-    if (batch.nonEmpty)
-      Deferred.groupInOrder(batch.asJava)
-        .addErrback(new Callback[Unit, Exception] {
-          override def call(t: Exception): Unit = {
-            log.error("Error in adding a data point", t)
-          }
-        })
-        .addCallback(new Callback[Unit, util.ArrayList[AnyRef]] {
-          override def call(results: util.ArrayList[AnyRef]): Unit = {
-            assert(results.size() == size)
-            log.trace(s"Added $size data points")
-          }
-        })
-        .join()
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private def doThrottle(d: Deferred[AnyRef]) = {
+    log.info("Throttling...")
+    var throttle_time = System.nanoTime()
+    try {
+      d.joinUninterruptibly()
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException("Should never happen", e)
+    }
+    throttle_time = System.nanoTime() - throttle_time
+    if (throttle_time < 1000000000L) {
+      log.info("Got throttled for only " + throttle_time + "ns, sleeping a bit now")
+      try {
+        Thread.sleep(1000)
+      } catch {
+        case e: InterruptedException =>
+          throw new RuntimeException("interrupted", e)
+      }
+    }
+    log.info("Done throttling...")
+    false
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
-  @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    var batch = ListBuffer.empty[Deferred[AnyRef]]
+  @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    var datapoints = mutable.Map.empty[String, WritableDataPoints]
+    @volatile var throttle = false
+    val cb = new ThrottlingCallback(throttle, tsdb)
     it.foreach(dp => {
-      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-      if (batch.size == batchSize) {
-        waitForWritingBatch(batch, batchSize)
-        batch = ListBuffer.empty[Deferred[AnyRef]]
-      }
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle)
+        throttle = doThrottle(d)
     })
-    waitForWritingBatch(batch, batch.size)
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
-  @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    var batch = ListBuffer.empty[Deferred[AnyRef]]
+  @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    @volatile var throttle = false
+    val cb = new ThrottlingCallback(throttle, tsdb)
     it.foreach(dp => {
-      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava))
-      if (batch.size == batchSize) {
-        waitForWritingBatch(batch, batchSize)
-        batch = ListBuffer.empty[Deferred[AnyRef]]
-      }
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle)
+        throttle = doThrottle(d)
     })
-    waitForWritingBatch(batch, batch.size)
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
-  @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB, batchSize: Int) = {
-    var batch = ListBuffer.empty[Deferred[AnyRef]]
+  @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    @volatile var throttle = false
+    val cb = new ThrottlingCallback(throttle, tsdb)
     it.foreach(dp => {
-      batch.append(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava))
-      if (batch.size == batchSize) {
-        waitForWritingBatch(batch, batchSize)
-        batch = ListBuffer.empty[Deferred[AnyRef]]
-      }
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle)
+        throttle = doThrottle(d)
     })
-    waitForWritingBatch(batch, batch.size)
   }
 
-  implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addLongDataPoints(it, tsdb, batchSize)
+  implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
+    addLongDataPoints(it, tsdb)
   }
 
-  implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addLongDataPoints(it, tsdb, batchSize)
+  implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
+    addLongDataPoints(it, tsdb)
   }
 
-  implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addLongDataPoints(it, tsdb, batchSize)
+  implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
+    addLongDataPoints(it, tsdb)
   }
 
-  implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addLongDataPoints(it, tsdb, batchSize)
+  implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
+    addLongDataPoints(it, tsdb)
   }
 
-  implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addFloatDataPoints(it, tsdb, batchSize)
+  implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
+    addFloatDataPoints(it, tsdb)
   }
 
-  implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB, Int) => Unit = (it, tsdb, batchSize) => {
-    addDoubleDataPoints(it, tsdb, batchSize)
+  implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
+    addDoubleDataPoints(it, tsdb)
   }
 
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {

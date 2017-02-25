@@ -189,7 +189,7 @@ class SparkSpec extends SparkBaseSpec {
       for (i <- values1.indices) {
         val diff = Math.abs(values1(i) - values2(i))
         println(s"$i ${values1(i)} ${values2(i)} $diff")
-        diff must be < (0.00001d)
+        diff must be < 0.00001d
       }
     }
   }
@@ -317,13 +317,13 @@ class SparkSpec extends SparkBaseSpec {
         i <- 0 until 10
         ts = Timestamp.from(Instant.parse(s"2016-07-05T${10 + i}:00:00.00Z"))
         epoch = ts.getTime
-        point = DataPoint("mymetric3", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
+        point = DataPoint("mymetric3", epoch, i.toFloat, Map("key1" -> "value1", "key2" -> "value2"))
       } yield point
 
-      val rdd = sparkSession.sparkContext.parallelize[DataPoint[Double]](points)
+      val rdd = sparkSession.sparkContext.parallelize[DataPoint[Float]](points)
 
       @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures"))
-      val stream = streamingContext.queueStream[DataPoint[Double]](mutable.Queue(rdd))
+      val stream = streamingContext.queueStream[DataPoint[Float]](mutable.Queue(rdd))
 
       openTSDBContext.streamWrite(stream)
 

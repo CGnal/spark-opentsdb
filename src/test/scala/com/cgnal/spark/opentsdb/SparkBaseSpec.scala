@@ -48,7 +48,6 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     OpenTSDBContext.saltWidth = 1
     OpenTSDBContext.saltBuckets = 2
-    OpenTSDBContext.batchSize = 2
     hbaseUtil.startMiniCluster(4)
     val conf = new SparkConf().
       setAppName("spark-opentsdb-local-test").
