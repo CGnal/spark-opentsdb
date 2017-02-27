@@ -41,28 +41,6 @@ import scala.collection.convert.decorateAsJava._
 import scala.collection.mutable
 import scala.language.implicitConversions
 
-@SuppressWarnings(Array("org.wartremover.warts.Var"))
-private class ThrottlingCallback(var throttle: Boolean, tsdb: TSDB) extends Callback[Unit, AnyRef] {
-
-  @transient private lazy val log = Logger.getLogger(getClass.getName)
-
-  def call(arg: AnyRef): Unit = {
-    arg match {
-      case ex: PleaseThrottleException =>
-        log.warn("Need to throttle, HBase isn't keeping up.", ex)
-        throttle = true
-        val rpc: HBaseRpc = ex.getFailedRpc
-        rpc match {
-          case op: PutRequest =>
-            tsdb.getClient.put(op)
-        }
-      case ex: Exception =>
-        log.error("Failing in writing a datapoint", ex)
-    }
-    ()
-  }
-}
-
 package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
@@ -88,43 +66,96 @@ package object opentsdb {
       }
     }
     log.info("Done throttling...")
-    false
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     var datapoints = mutable.Map.empty[String, WritableDataPoints]
     @volatile var throttle = false
-    val cb = new ThrottlingCallback(throttle, tsdb)
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
     it.foreach(dp => {
       val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
       d.addBoth(cb)
-      if (throttle)
-        throttle = doThrottle(d)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
+      }
     })
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     @volatile var throttle = false
-    val cb = new ThrottlingCallback(throttle, tsdb)
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
     it.foreach(dp => {
       val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava)
       d.addBoth(cb)
-      if (throttle)
-        throttle = doThrottle(d)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
+      }
     })
   }
 
   @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
   @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     @volatile var throttle = false
-    val cb = new ThrottlingCallback(throttle, tsdb)
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
     it.foreach(dp => {
       val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava)
       d.addBoth(cb)
-      if (throttle)
-        throttle = doThrottle(d)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
+      }
     })
   }
 

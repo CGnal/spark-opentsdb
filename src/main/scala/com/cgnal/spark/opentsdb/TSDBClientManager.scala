@@ -81,13 +81,14 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytabData   the keytab path
-   * @param principal    the principal
-   * @param baseConf     the configuration base used by this spark context
-   * @param tsdbTable    the tsdb table
-   * @param tsdbUidTable the tsdb-uid table
-   * @param saltWidth    the salting prefix size
-   * @param saltBuckets  the number of buckets
+   * @param keytabData        the keytab path
+   * @param principal         the principal
+   * @param baseConf          the configuration base used by this spark context
+   * @param tsdbTable         the tsdb table
+   * @param tsdbUidTable      the tsdb-uid table
+   * @param autoCreateMetrics the metrics auto create flag
+   * @param saltWidth         the salting prefix size
+   * @param saltBuckets       the number of buckets
    */
   def init(
     keytabLocalTempDir: Option[String],
@@ -96,6 +97,7 @@ object TSDBClientManager {
     baseConf: Configuration,
     tsdbTable: String,
     tsdbUidTable: String,
+    autoCreateMetrics: Boolean,
     saltWidth: Int,
     saltBuckets: Int
   ): Unit = synchronized {
@@ -109,7 +111,7 @@ object TSDBClientManager {
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "false")
+      config.overrideConfig("tsd.core.auto_create_metrics", autoCreateMetrics.toString)
       if (saltWidth > 0) {
         config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
         config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)

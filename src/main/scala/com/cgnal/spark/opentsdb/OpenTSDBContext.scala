@@ -65,6 +65,11 @@ object OpenTSDBContext {
   var tsdbUidTable = "tsdb-uid"
 
   /**
+   * The auto create metrics flag
+   */
+  var autoCreateMetrics: Boolean = true
+
+  /**
    * The salting prefix width, currently it can be 0=NO SALTING or 1
    */
   var saltWidth: Int = 0
@@ -93,6 +98,9 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var tsdbUidTable = OpenTSDBContext.tsdbUidTable
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var autoCreateMetrics = OpenTSDBContext.autoCreateMetrics
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var saltWidth: Int = OpenTSDBContext.saltWidth
@@ -192,6 +200,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
@@ -323,6 +332,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
@@ -432,6 +442,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
@@ -476,6 +487,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets
       )
@@ -524,6 +536,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
               baseConf = hbaseConfiguration,
               tsdbTable = tsdbTable,
               tsdbUidTable = tsdbUidTable,
+              autoCreateMetrics = autoCreateMetrics,
               saltWidth = saltWidth,
               saltBuckets = saltBuckets
             )
