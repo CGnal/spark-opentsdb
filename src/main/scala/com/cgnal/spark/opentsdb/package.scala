@@ -21,7 +21,7 @@ import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
-import net.opentsdb.core.{ TSDB, WritableDataPoints }
+import net.opentsdb.core.{ TSDB, WritableDataPoints, Internal }
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
@@ -233,7 +233,7 @@ package object opentsdb {
       stDateBuffer.putInt(minDate)
       endDateBuffer.putInt(maxDate)
     })(interval => {
-      stDateBuffer.putInt(interval._1.toInt)
+      stDateBuffer.putInt(Internal.baseTime(interval._1).toInt)
       endDateBuffer.putInt(interval._2.toInt)
     })
     if (bucket >= 0) {
