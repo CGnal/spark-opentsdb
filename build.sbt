@@ -251,7 +251,12 @@ lazy val projectAssembly = (project in file("assembly")).
 
 val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 
-buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
+val mvn = sys.props("os.name") match {
+  case s if s.startsWith("Windows") => "mvn.cmd"
+  case _ => "mvn"
+}
+
+buildShadedLibraries := Process(mvn :: "install" :: Nil, new File("shaded_libraries")).!
 
 buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
 compile in Compile <<= compile in Compile dependsOn buildShadedLibraries //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project
