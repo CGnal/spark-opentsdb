@@ -53,9 +53,13 @@ class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
 
   override def passivateObject(pooledTsdb: PooledObject[TSDB]): Unit = {
     log.info("About to flush the TSDB client instance")
-    pooledTsdb.getObject.flush().joinUninterruptibly()
+    val tsdb: TSDB = pooledTsdb.getObject
+    if (tsdb.getConfig.getBoolean("tsd.core.preload_uid_cache"))
+      log.error(s"Cache stats: Misses=${tsdb.uidCacheMisses()} Hits=${tsdb.uidCacheHits()} Size=${tsdb.uidCacheSize()}")
+    tsdb.flush().joinUninterruptibly()
     log.info("About to flush the TSDB client instance: done")
   }
+
 }
 
 /**
@@ -81,14 +85,19 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytabData        the keytab path
-   * @param principal         the principal
-   * @param baseConf          the configuration base used by this spark context
-   * @param tsdbTable         the tsdb table
-   * @param tsdbUidTable      the tsdb-uid table
-   * @param autoCreateMetrics the metrics auto create flag
-   * @param saltWidth         the salting prefix size
-   * @param saltBuckets       the number of buckets
+   * @param keytabData                the keytab path
+   * @param principal                 the principal
+   * @param baseConf                  the configuration base used by this spark context
+   * @param tsdbTable                 the tsdb table
+   * @param tsdbUidTable              the tsdb-uid table
+   * @param autoCreateMetrics         the metrics auto create flag
+   * @param saltWidth                 the salting prefix size
+   * @param saltBuckets               the number of buckets
+   * @param metricWidth               the size in bytes for the metric uids
+   * @param tagkWidth                 the size in bytes for the tagv uids
+   * @param tagvWidth                 the size in bytes for the tagv uids
+   * @param preloadUidCache           true if the uids should be cached
+   * @param preloadUidCacheMaxEntries the maximun number of cache entries
    */
   def init(
     keytabLocalTempDir: Option[String],
