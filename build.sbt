@@ -3,18 +3,18 @@
  *
  */
 
-import de.heikoseeberger.sbtheader.HeaderPattern
+import de.heikoseeberger.sbtheader.license.Apache2_0
 import sbt.{ExclusionRule, _}
 
 organization := "com.cgnal.spark"
 
 name := "spark-opentsdb"
 
-version in ThisBuild := "1.0"
+version in ThisBuild := "2.0"
 
 val assemblyName = "spark-opentsdb-assembly"
 
-scalaVersion := "2.10.6"
+scalaVersion in ThisBuild := "2.11.8"
 
 ivyScala := ivyScala.value map {
   _.copy(overrideScalaVersion = true)
@@ -42,7 +42,7 @@ scalacOptions ++= Seq(
   "-Xfuture"
 )
 
-scalacOptions in (Compile, doc) ++= Seq(
+scalacOptions in(Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 
@@ -80,19 +80,15 @@ wartremoverErrors ++= Seq(
   Wart.While
 )
 
-val sparkVersion = "1.6.0-cdh5.7.1"
+val sparkVersion = "2.0.0.cloudera1"
 
-val hadoopVersion = "2.6.0-cdh5.7.1"
+val hadoopVersion = "2.6.0-cdh5.9.0"
 
-val hbaseVersion = "1.2.0-cdh5.7.1"
+val hbaseVersion = "1.2.0-cdh5.9.0"
 
-val sparkAvroVersion = "1.1.0-cdh5.7.1"
+val scalaTestVersion = "3.0.1"
 
-val scalaTestVersion = "3.0.0"
-
-val openTSDBVersion = "2.2.0"
-
-val sparkTSVersion = "0.3.0"
+val openTSDBVersion = "2.3.0"
 
 val commonsPoolVersion = "2.4.2"
 
@@ -140,12 +136,6 @@ val hbaseExcludes =
     exclude("commons-beanutils", "commons-beanutils")
 
 val assemblyDependencies = Seq(
-  sparkExcludes("com.cloudera.sparkts" % "sparkts" % sparkTSVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "compile"),
-  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "compile"),
   "org.apache.commons" % "commons-pool2" % commonsPoolVersion % "compile",
   "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "compile"
 )
@@ -163,6 +153,11 @@ libraryDependencies ++= Seq(
   sparkExcludes("org.apache.spark" %% "spark-yarn" % sparkVersion % scope),
   sparkExcludes("org.apache.spark" %% "spark-mllib" % sparkVersion % scope),
   sparkExcludes("org.apache.spark" %% "spark-streaming" % sparkVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-client" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-protocol" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % scope),
+  hbaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-api" % hadoopVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-client" % hadoopVersion % scope),
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-yarn-common" % hadoopVersion % scope),
@@ -171,6 +166,19 @@ libraryDependencies ++= Seq(
   hadoopClientExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % scope)
 ) ++ assemblyDependencies
 
+//Trick to make Intellij/IDEA happy
+//We set all provided dependencies to none, so that they are included in the classpath of root module
+lazy val mainRunner = project.in(file("mainRunner")).dependsOn(RootProject(file("."))).settings(
+  // we set all provided dependencies to none, so that they are included in the classpath of mainRunner
+  libraryDependencies := (libraryDependencies in RootProject(file("."))).value.map{
+    module =>
+      if (module.configurations.equals(Some("provided"))) {
+        module.copy(configurations = None)
+      } else {
+        module
+      }
+  }
+)
 isSnapshot := true
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
@@ -188,56 +196,36 @@ val hadoopHBaseExcludes =
     excludeAll(ExclusionRule(organization = "org.mortbay.jetty")).
     excludeAll(ExclusionRule(organization = "javax.servlet"))
 
-val header1 = (
-  HeaderPattern.cStyleBlockComment,
-  """|/*
-    | * Copyright 2016 CGnal S.p.A.
-    | *
-    | */
-    |
-    |""".stripMargin
-  )
-
-val header2 = (
-  HeaderPattern.hashLineComment,
-  """|#
-    |# Copyright 2016 CGnal S.p.A.
-    |#
-    |#
-    |
-    |""".stripMargin
-  )
-
 lazy val root = (project in file(".")).
   configs(IntegrationTest).
   settings(Defaults.itSettings: _*).
   settings(
     libraryDependencies ++= Seq(
-      hadoopHBaseExcludes("org.scalatest" % "scalatest_2.10" % scalaTestVersion % "it,test"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "it,test" classifier "tests"
+      hadoopHBaseExcludes("org.scalatest" %% "scalatest" % scalaTestVersion % "test"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-server" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-common" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-testing-util" % hbaseVersion % "test" classifier "tests"
         exclude("org.apache.hadoop<", "hadoop-hdfs")
         exclude("org.apache.hadoop", "hadoop-minicluster")
         exclude("org.apache.hadoo", "hadoop-client")),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop2-compat" % hbaseVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "it,test" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "it,test" classifier "tests"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "it,test"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "it,test" classifier "tests" extra "type" -> "test-jar"),
-      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "it,test" classifier "tests"),
-      "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "it,test"
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop-compat" % hbaseVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hbase" % "hbase-hadoop2-compat" % hbaseVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "test" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-client" % hadoopVersion % "test" classifier "tests"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-minicluster" % hadoopVersion % "test"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-common" % hadoopVersion % "test" classifier "tests" extra "type" -> "test-jar"),
+      hadoopHBaseExcludes("org.apache.hadoop" % "hadoop-mapreduce-client-jobclient" % hadoopVersion % "test" classifier "tests"),
+      "net.opentsdb" % "opentsdb-shaded" % openTSDBVersion % "test"
     ),
     headers := Map(
-      "sbt" -> header1,
-      "scala" -> header1,
-      "conf" -> header2,
-      "properties" -> header2
+      "sbt" -> Apache2_0("2016", "CGnal S.p.A."),
+      "scala" -> Apache2_0("2016", "CGnal S.p.A."),
+      "conf" -> Apache2_0("2016", "CGnal S.p.A.", "#"),
+      "properties" -> Apache2_0("2016", "CGnal S.p.A.", "#")
     )
   ).
   enablePlugins(AutomateHeaderPlugin).
@@ -250,8 +238,8 @@ lazy val projectAssembly = (project in file("assembly")).
     },
     assemblyMergeStrategy in assembly := {
       case "org/apache/spark/unused/UnusedStubClass.class" => MergeStrategy.last
-      case s if s contains "META-INF"                      => MergeStrategy.discard
-      case x                                               => MergeStrategy.last
+      case s if s contains "META-INF" => MergeStrategy.discard
+      case x => MergeStrategy.last
     },
     assemblyJarName in assembly := s"$assemblyName-${version.value}.jar",
     libraryDependencies in assembly := assemblyDependencies
@@ -263,7 +251,12 @@ lazy val projectAssembly = (project in file("assembly")).
 
 val buildShadedLibraries = taskKey[Unit]("Build the shaded library")
 
-buildShadedLibraries := Process("mvn" :: "install" :: Nil, new File("shaded_libraries")).!
+val mvn = sys.props("os.name") match {
+  case s if s.startsWith("Windows") => "mvn.cmd"
+  case _ => "mvn"
+}
+
+buildShadedLibraries := Process(mvn :: "install" :: Nil, new File("shaded_libraries")).!
 
 buildShadedLibraries <<= buildShadedLibraries dependsOn buildShadedLibraries
-compile in Compile <<= compile in Compile dependsOn buildShadedLibraries  //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project
+compile in Compile <<= compile in Compile dependsOn buildShadedLibraries //Uncomment this if you want to rebuild the shahded libraries every time you compile/test the project

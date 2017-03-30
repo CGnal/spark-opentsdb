@@ -1,6 +1,17 @@
 /*
  * Copyright 2016 CGnal S.p.A.
  *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.cgnal.spark
@@ -10,7 +21,7 @@ import java.sql.Timestamp
 import java.util.{ Calendar, TimeZone }
 
 import com.stumbleupon.async.{ Callback, Deferred }
-import net.opentsdb.core.TSDB
+import net.opentsdb.core.{ TSDB, WritableDataPoints, Internal }
 import org.apache.hadoop.hbase.client.{ Result, Scan }
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
 import org.apache.hadoop.hbase.filter.{ RegexStringComparator, RowFilter }
@@ -21,66 +32,155 @@ import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.security.UserGroupInformation
 import org.apache.log4j.Logger
-import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
+import shaded.org.hbase.async.{ HBaseRpc, PleaseThrottleException, PutRequest }
 
 import scala.collection.convert.decorateAsJava._
+import scala.collection.mutable
 import scala.language.implicitConversions
 
 package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  private def registerCallback(deferred: Deferred[AnyRef]): Unit = {
-    deferred.addCallback(new Callback[Unit, AnyRef] {
-      override def call(t: AnyRef): Unit = {
-        log.trace(s"Added a data point")
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private def doThrottle(d: Deferred[AnyRef]) = {
+    log.info("Throttling...")
+    var throttle_time = System.nanoTime()
+    try {
+      d.joinUninterruptibly()
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException("Should never happen", e)
+    }
+    throttle_time = System.nanoTime() - throttle_time
+    if (throttle_time < 1000000000L) {
+      log.info("Got throttled for only " + throttle_time + "ns, sleeping a bit now")
+      try {
+        Thread.sleep(1000)
+      } catch {
+        case e: InterruptedException =>
+          throw new RuntimeException("interrupted", e)
+      }
+    }
+    log.info("Done throttling...")
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    var datapoints = mutable.Map.empty[String, WritableDataPoints]
+    @volatile var throttle = false
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
+    it.foreach(dp => {
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
       }
     })
-    deferred.addErrback(new Callback[Unit, Throwable] {
-      override def call(t: Throwable): Unit = {
-        log.error("Error in adding a data point", t)
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    @volatile var throttle = false
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
+    it.foreach(dp => {
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Float], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
       }
     })
-    ()
+  }
+
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
+    @volatile var throttle = false
+    val cb = new Callback[Unit, AnyRef] {
+      def call(arg: AnyRef): Unit = {
+        arg match {
+          case ex: PleaseThrottleException =>
+            log.warn("Need to throttle, HBase isn't keeping up.", ex)
+            throttle = true
+            val rpc: HBaseRpc = ex.getFailedRpc
+            rpc match {
+              case op: PutRequest =>
+                tsdb.getClient.put(op)
+            }
+          case ex: Exception =>
+            log.error("Failing in writing a datapoint", ex)
+        }
+        ()
+      }
+    }
+    it.foreach(dp => {
+      val d = tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Double], dp.tags.asJava)
+      d.addBoth(cb)
+      if (throttle) {
+        doThrottle(d)
+        throttle = false
+      }
+    })
   }
 
   implicit val writeForByte: (Iterator[DataPoint[Byte]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForShort: (Iterator[DataPoint[Short]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForInt: (Iterator[DataPoint[Int]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value.asInstanceOf[Long], dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForLong: (Iterator[DataPoint[Long]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addLongDataPoints(it, tsdb)
   }
 
   implicit val writeForFloat: (Iterator[DataPoint[Float]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addFloatDataPoints(it, tsdb)
   }
 
   implicit val writeForDouble: (Iterator[DataPoint[Double]], TSDB) => Unit = (it, tsdb) => {
-    it.foreach(dp => {
-      registerCallback(tsdb.addPoint(dp.metric, dp.timestamp, dp.value, dp.tags.asJava))
-    })
+    addDoubleDataPoints(it, tsdb)
   }
 
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
@@ -133,7 +233,7 @@ package object opentsdb {
       stDateBuffer.putInt(minDate)
       endDateBuffer.putInt(maxDate)
     })(interval => {
-      stDateBuffer.putInt(interval._1.toInt)
+      stDateBuffer.putInt(Internal.baseTime(interval._1).toInt)
       endDateBuffer.putInt(interval._2.toInt)
     })
     if (bucket >= 0) {
@@ -183,18 +283,18 @@ package object opentsdb {
     def opentsdb: DataFrame = reader.format("com.cgnal.spark.opentsdb").load
   }
 
-  implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter) {
+  implicit class OpenTSDBDataFrameWriter(writer: DataFrameWriter[Row]) {
     def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
 
-    def toDF(implicit sqlContext: SQLContext): DataFrame = {
+    def toDF(implicit sparkSession: SparkSession): DataFrame = {
       val df = rdd.map {
         dp =>
           Row(new Timestamp(dp.timestamp), dp.metric, dp.value, dp.tags)
       }
-      sqlContext.createDataFrame(df, StructType(
+      sparkSession.createDataFrame(df, StructType(
         Array(
           StructField("timestamp", TimestampType, nullable = false),
           StructField("metric", StringType, nullable = false),
@@ -212,16 +312,16 @@ package object opentsdb {
     )
   }
 
-  implicit class EnrichedSparkContext(sparkContext: SparkContext) {
+  implicit class EnrichedSparkSession(sparkSession: SparkSession) {
 
     def loadTable(tableName: TableName, scan: Scan): RDD[(ImmutableBytesWritable, Result)] = {
-      val conf = new JobConf(HBaseConfiguration.create(sparkContext.hadoopConfiguration))
+      val conf = new JobConf(HBaseConfiguration.create(sparkSession.sparkContext.hadoopConfiguration))
       val job = Job.getInstance(conf)
       TableMapReduceUtil.initTableMapperJob(tableName, scan, classOf[IdentityTableMapper], null, null, job)
       conf.getCredentials.addAll {
         UserGroupInformation.getCurrentUser.getCredentials
       }
-      sparkContext.newAPIHadoopRDD(
+      sparkSession.sparkContext.newAPIHadoopRDD(
         job.getConfiguration,
         classOf[TableInputFormat],
         classOf[ImmutableBytesWritable],

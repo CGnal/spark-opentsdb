@@ -1,6 +1,17 @@
 /*
  * Copyright 2016 CGnal S.p.A.
  *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.cgnal.spark.opentsdb
@@ -11,7 +22,7 @@ import java.nio.file.attribute.PosixFilePermission
 
 import net.opentsdb.core.TSDB
 import net.opentsdb.utils.Config
-import org.apache.commons.pool2.impl.{ DefaultPooledObject, SoftReferenceObjectPool }
+import org.apache.commons.pool2.impl.{ DefaultPooledObject, GenericObjectPool }
 import org.apache.commons.pool2.{ BasePooledObjectFactory, PooledObject }
 import org.apache.hadoop.conf.Configuration
 import org.apache.log4j.Logger
@@ -39,6 +50,12 @@ class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
     pooledTsdb.getObject.shutdown().joinUninterruptibly()
     log.info("About to shutdown the TSDB client instance: done")
   }
+
+  override def passivateObject(pooledTsdb: PooledObject[TSDB]): Unit = {
+    log.info("About to flush the TSDB client instance")
+    pooledTsdb.getObject.flush().joinUninterruptibly()
+    log.info("About to flush the TSDB client instance: done")
+  }
 }
 
 /**
@@ -48,7 +65,7 @@ object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
-  @transient val pool = new SoftReferenceObjectPool[TSDB](new TSDBClientFactory())
+  @transient val pool = new GenericObjectPool[TSDB](new TSDBClientFactory())
 
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))
@@ -64,13 +81,14 @@ object TSDBClientManager {
 
   /**
    *
-   * @param keytabData   the keytab path
-   * @param principal    the principal
-   * @param baseConf     the configuration base used by this spark context
-   * @param tsdbTable    the tsdb table
-   * @param tsdbUidTable the tsdb-uid table
-   * @param saltWidth    the salting prefix size
-   * @param saltBuckets  the number of buckets
+   * @param keytabData        the keytab path
+   * @param principal         the principal
+   * @param baseConf          the configuration base used by this spark context
+   * @param tsdbTable         the tsdb table
+   * @param tsdbUidTable      the tsdb-uid table
+   * @param autoCreateMetrics the metrics auto create flag
+   * @param saltWidth         the salting prefix size
+   * @param saltBuckets       the number of buckets
    */
   def init(
     keytabLocalTempDir: Option[String],
@@ -79,8 +97,14 @@ object TSDBClientManager {
     baseConf: Configuration,
     tsdbTable: String,
     tsdbUidTable: String,
+    autoCreateMetrics: Boolean,
     saltWidth: Int,
-    saltBuckets: Int
+    saltBuckets: Int,
+    metricWidth: Int,
+    tagkWidth: Int,
+    tagvWidth: Int,
+    preloadUidCache: Boolean,
+    preloadUidCacheMaxEntries: Int
   ): Unit = synchronized {
     if (config_.isEmpty || asyncConfig_.isEmpty) {
       log.info("Initialising the OpenTSDBClientManager")
@@ -92,7 +116,12 @@ object TSDBClientManager {
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
-      config.overrideConfig("tsd.core.auto_create_metrics", "true")
+      config.overrideConfig("tsd.core.auto_create_metrics", autoCreateMetrics.toString)
+      config.overrideConfig("tsd.storage.uid.width.metric", metricWidth.toString)
+      config.overrideConfig("tsd.storage.uid.width.tagk", tagkWidth.toString)
+      config.overrideConfig("tsd.storage.uid.width.tagk", tagvWidth.toString)
+      config.overrideConfig("tsd.core.preload_uid_cache", preloadUidCache.toString)
+      config.overrideConfig("tsd.core.preload_uid_cache.max_entries", preloadUidCacheMaxEntries.toString)
       if (saltWidth > 0) {
         config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
         config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)

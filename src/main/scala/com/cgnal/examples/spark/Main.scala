@@ -1,6 +1,17 @@
 /*
  * Copyright 2016 CGnal S.p.A.
  *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.cgnal.examples.spark
@@ -10,18 +21,20 @@ import java.sql.Timestamp
 import java.time.Instant
 
 import com.cgnal.spark.opentsdb._
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.{ SparkConf, SparkContext }
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{ SQLContext, SparkSession }
 
 import scala.util.Random
 
 /*
-  spark-submit --executor-memory 1200M \
+  spark2-submit \
+  --executor-memory 1200M \
   --driver-class-path /etc/hbase/conf \
-  --conf spark.executor.extraClassPath=/etc/hbase/conf \
+  --conf spark.driver.extraClassPath=/etc/hbase/conf:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-server-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-client-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-hadoop-compat-1.2.0-cdh5.10.0.jar \
+  --conf spark.executor.extraClassPath=/etc/hbase/conf:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-server-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-client-1.2.0-cdh5.10.0.jar:/opt/cloudera/parcels/CDH-5.10.0-1.cdh5.10.0.p0.41/jars/hbase-hadoop-compat-1.2.0-cdh5.10.0.jar \
   --conf spark.executor.extraJavaOptions=-Djava.security.auth.login.config=/tmp/jaas.conf \
   --master yarn --deploy-mode client \
-  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-1.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
+  --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-2.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
  */
 
 object Main extends App {
@@ -38,7 +51,7 @@ object Main extends App {
 
   val uberJarLocation = {
     val location = getJar(Main.getClass)
-    if (new File(location).isDirectory) s"${System.getProperty("user.dir")}/assembly/target/scala-2.10/spark-opentsdb-assembly-1.0.jar" else location
+    if (new File(location).isDirectory) s"${System.getProperty("user.dir")}/assembly/target/scala-2.11/spark-opentsdb-assembly-2.0.jar" else location
   }
 
   if (master.isEmpty) {
@@ -51,8 +64,6 @@ object Main extends App {
         setMaster("yarn-client").
         setAppName("spark-cdh5-template-yarn").
         setJars(List(uberJarLocation)).
-        set("spark.yarn.jar", "local:/opt/cloudera/parcels/CDH/lib/spark/assembly/lib/spark-assembly.jar").
-        set("spark.executor.extraClassPath", "/opt/cloudera/parcels/CDH/jars/*"). //This is an hack I made I'm not sure why it works though
         set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").
         set("spark.io.compression.codec", "lzf").
         set("spark.speculation", "true").
@@ -69,11 +80,9 @@ object Main extends App {
         setMaster("local")
   }
 
-  val sparkContext = new SparkContext(conf)
+  implicit val sparkSession: SparkSession = SparkSession.builder().config(conf).getOrCreate()
 
-  sparkContext.setLogLevel("ERROR")
-
-  implicit val sqlContext: SQLContext = new SQLContext(sparkContext)
+  sparkSession.sparkContext.setLogLevel("ERROR")
 
   val ts = Timestamp.from(Instant.parse(s"2016-07-05T10:00:00.00Z"))
   val N = 1000000
@@ -85,12 +94,14 @@ object Main extends App {
     point = DataPoint(s"mymetric${r.nextInt(M)}", epoch, i.toDouble, Map("key1" -> "value1", "key2" -> "value2"))
   } yield point
 
-  val rdd = sparkContext.parallelize[DataPoint[Double]](points)
+  val rdd = sparkSession.sparkContext.parallelize[DataPoint[Double]](points)
 
   OpenTSDBContext.saltWidth = 1
   OpenTSDBContext.saltBuckets = 4
 
   val start = System.currentTimeMillis()
+
+  implicit val sqlContext: SQLContext = sparkSession.sqlContext
   rdd.toDF.write.options(Map(
     "opentsdb.keytabLocalTempDir" -> "/tmp",
     "opentsdb.keytab" -> args(1),
@@ -103,7 +114,7 @@ object Main extends App {
   val tsEnd = Timestamp.from(Instant.parse(s"2016-07-05T20:00:00.00Z")).getTime / 1000
 
   val tot = (0 until M).map(i => {
-    val df = sqlContext.read.options(Map(
+    val df = sparkSession.read.options(Map(
       "opentsdb.metric" -> s"mymetric$i",
       "opentsdb.tags" -> "key1->value1,key2->value2",
       "opentsdb.keytabLocalTempDir" -> "/tmp",
@@ -120,5 +131,5 @@ object Main extends App {
 
   println(tot)
 
-  sparkContext.stop()
+  sparkSession.stop()
 }

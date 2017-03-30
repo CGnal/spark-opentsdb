@@ -1,6 +1,17 @@
 /*
  * Copyright 2016 CGnal S.p.A.
  *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.cgnal.spark.opentsdb
@@ -8,10 +19,8 @@ package com.cgnal.spark.opentsdb
 import java.io.File
 import java.nio.file.{ Files, Paths }
 import java.sql.Timestamp
-import java.time.{ Instant, LocalDateTime, ZoneId, ZonedDateTime }
 import java.util
 
-import com.cloudera.sparkts.{ DateTimeIndex, Frequency, TimeSeriesRDD }
 import net.opentsdb.core.{ IllegalDataException, Internal, TSDB }
 import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
@@ -20,7 +29,7 @@ import org.apache.log4j.Logger
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ DataFrame, Row, SQLContext }
+import org.apache.spark.sql.{ DataFrame, Row, SparkSession }
 import org.apache.spark.streaming.dstream.DStream
 import shaded.org.hbase.async.KeyValue
 
@@ -56,6 +65,11 @@ object OpenTSDBContext {
   var tsdbUidTable = "tsdb-uid"
 
   /**
+   * The auto create metrics flag
+   */
+  var autoCreateMetrics: Boolean = true
+
+  /**
    * The salting prefix width, currently it can be 0=NO SALTING or 1
    */
   var saltWidth: Int = 0
@@ -65,15 +79,39 @@ object OpenTSDBContext {
    */
   var saltBuckets: Int = 0
 
+  /**
+   *
+   */
+  var metricWidth: Int = 3
+
+  /**
+   *
+   */
+  var tagkWidth: Int = 3
+
+  /**
+   *
+   */
+  var tagvWidth: Int = 3
+
+  /**
+   *
+   */
+  var preloadUidCache: Boolean = false
+
+  /**
+   *
+   */
+  var preloadUidCacheMaxEntries: Int = 300000
 }
 
 /**
  * This class provides all the functionalities for reading and writing metrics from/to an OpenTSDB instance
  *
- * @param sqlContext    The sql context needed for creating the dataframes, the spark context it's obtained from this sql context
- * @param configurator  The Configurator instance that will be used to create the configuration
+ * @param sparkSession The sparkSession needed for creating the dataframes, the spark context it's obtained from this sql context
+ * @param configurator The Configurator instance that will be used to create the configuration
  */
-class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
+class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
@@ -86,10 +124,28 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
   private[opentsdb] var tsdbUidTable = OpenTSDBContext.tsdbUidTable
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var autoCreateMetrics = OpenTSDBContext.autoCreateMetrics
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var saltWidth: Int = OpenTSDBContext.saltWidth
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var saltBuckets: Int = OpenTSDBContext.saltBuckets
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var tagkWidth: Int = OpenTSDBContext.tagkWidth
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var tagvWidth: Int = OpenTSDBContext.tagvWidth
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var metricWidth: Int = OpenTSDBContext.metricWidth
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var preloadUidCache: Boolean = OpenTSDBContext.preloadUidCache
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var preloadUidCacheMaxEntries: Int = OpenTSDBContext.preloadUidCacheMaxEntries
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private var keytabData_ : Option[Broadcast[Array[Byte]]] = None
@@ -111,7 +167,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
   def keytab_=(keytab: String): Unit = {
     val keytabPath = new File(keytab).getAbsolutePath
     val byteArray = Files.readAllBytes(Paths.get(keytabPath))
-    keytabData_ = Some(sqlContext.sparkContext.broadcast(byteArray))
+    keytabData_ = Some(sparkSession.sparkContext.broadcast(byteArray))
   }
 
   /**
@@ -130,55 +186,6 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
    * @param principal the kerberos principal to be used in combination with the keytab
    */
   def principal_=(principal: String): Unit = principal_ = Some(principal)
-
-  /**
-   * It loads multiple OpenTSDB timeseries into a [[com.cloudera.sparkts.TimeSeriesRDD]]
-   *
-   * @param interval  an optional pair of longs, the first long is the epoch time in seconds as the beginning of the interval,
-   *                  the second long is the end of the interval (exclusive).
-   *                  This method will retrieve all the metrics included into this interval.
-   * @param frequency the interval frequency, see `Frequency`
-   * @param metrics   a list of pair metric name, tags
-   * @return a [[com.cloudera.sparkts.TimeSeriesRDD]] instance
-   */
-  def loadTimeSeriesRDD(
-    interval: Option[(Long, Long)],
-    frequency: Frequency,
-    metrics: List[(String, Map[String, String])]
-  ): TimeSeriesRDD[String] = {
-
-    val startDateEpochInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._1.toLong * 1000).getTime
-    val endDateEpochInInMillis: Long = new Timestamp(interval.getOrElse(throw new Exception)._2.toLong * 1000).getTime - 1
-
-    LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z"))
-
-    val startZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(startDateEpochInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
-    val endZoneDate = ZonedDateTime.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(endDateEpochInInMillis), ZoneId.of("Z")), ZoneId.of("Z"))
-
-    val index = DateTimeIndex.uniformFromInterval(startZoneDate, endZoneDate, frequency, ZoneId.of("UTC")).atZone(ZoneId.of("UTC"))
-
-    val dfs: List[DataFrame] = metrics.map(m => loadDataFrame(
-      m._1,
-      m._2,
-      interval
-    ))
-
-    val initDF = dfs.headOption.getOrElse(throw new Exception("There must be at least one dataframe"))
-    val otherDFs = dfs.drop(1)
-
-    val observations = if (otherDFs.isEmpty)
-      initDF
-    else
-      otherDFs.fold(initDF)((df1, df2) => df1.unionAll(df2))
-
-    TimeSeriesRDD.timeSeriesRDDFromObservations(
-      index,
-      observations,
-      "timestamp",
-      "metric",
-      "value"
-    )
-  }
 
   /**
    * This method loads a time series from OpenTSDB as a [[org.apache.spark.sql.DataFrame]]
@@ -213,7 +220,79 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
           dp.tags
         )
     }
-    sqlContext.createDataFrame(rowRDD, schema)
+    sparkSession.createDataFrame(rowRDD, schema)
+  }
+
+  /**
+   * This method creates a list of metric names
+   *
+   * @param metrics the list of metrics
+   */
+  def createMetrics(metrics: List[(String, Map[String, String])]): Unit = {
+    val rdd: RDD[Int] = sparkSession.sparkContext.parallelize[Int](1 to 1, 1)
+
+    val toexecute = rdd.mapPartitionsWithIndex[Int]((index, iterator) => {
+      TSDBClientManager.init(
+        keytabLocalTempDir = keytabLocalTempDir_,
+        keytabData = keytabData_,
+        principal = principal_,
+        baseConf = hbaseConfiguration,
+        tsdbTable = tsdbTable,
+        tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
+        saltWidth = saltWidth,
+        saltBuckets = saltBuckets,
+        metricWidth = metricWidth,
+        tagkWidth = tagkWidth,
+        tagvWidth = tagvWidth,
+        preloadUidCache = preloadUidCache,
+        preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
+      )
+      new Iterator[Int] {
+
+        val tsdb: TSDB = TSDBClientManager.pool.borrowObject()
+
+        @SuppressWarnings(Array("org.wartremover.warts.Var"))
+        var firstTime = true
+
+        @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
+        override def hasNext: Boolean =
+          if (firstTime) {
+            firstTime = false
+            true
+          } else {
+            TSDBClientManager.pool.returnObject(tsdb)
+            firstTime
+          }
+
+        override def next(): Int = {
+          if (index == 0) {
+            metrics.foreach(metric => {
+              try {
+                tsdb.assignUid("metric", metric._1)
+              } catch {
+                case _: java.lang.IllegalArgumentException =>
+              }
+              metric._2.foreach[Unit](kv => {
+                try {
+                  val _ = tsdb.assignUid("tagk", kv._1)
+                } catch {
+                  case _: java.lang.IllegalArgumentException =>
+                }
+                try {
+                  val _ = tsdb.assignUid("tagv", kv._2)
+                } catch {
+                  case _: java.lang.IllegalArgumentException =>
+                }
+              })
+            })
+          }
+          index
+        }
+      }
+    }, preservesPartitioning = true)
+
+    val _ = toexecute.count()
   }
 
   /**
@@ -238,7 +317,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
     log.trace("Loading metric and tags uids")
 
     val uidScan = getUIDScan(metricName, tags)
-    val tsdbUID = sqlContext.sparkContext.loadTable(tsdbUidTable, uidScan)
+    val tsdbUID = sparkSession.loadTable(tsdbUidTable, uidScan)
     val metricsUID: Array[Array[Byte]] = tsdbUID.map(p => p._2.getValue("id".getBytes, "metrics".getBytes())).filter(_ != null).collect
     val (tagKUIDs, tagVUIDs) = if (tags.isEmpty)
       (Map.empty[String, Array[Byte]], Map.empty[String, Array[Byte]])
@@ -262,7 +341,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
         tagVUIDs,
         interval
       )
-      sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
+      sparkSession.loadTable(tsdbTable, metricScan)
     } else {
       assert(saltWidth == 1)
       assert(saltBuckets >= 1)
@@ -277,7 +356,7 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
             tagVUIDs,
             interval
           )
-          sqlContext.sparkContext.loadTable(tsdbTable, metricScan)
+          sparkSession.loadTable(tsdbTable, metricScan)
       } toList
 
       val initRDD = rdds.headOption.getOrElse(throw new Exception("There must be at least one RDD"))
@@ -297,18 +376,25 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
-        saltBuckets = saltBuckets
+        saltBuckets = saltBuckets,
+        metricWidth = metricWidth,
+        tagkWidth = tagkWidth,
+        tagvWidth = tagvWidth,
+        preloadUidCache = preloadUidCache,
+        preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
       )
       new Iterator[Iterator[DataPoint[_ <: AnyVal]]] {
 
+        log.trace("getting the TSDB client instance from the pool")
         val tsdb: TSDB = TSDBClientManager.pool.borrowObject()
 
         val i: Iterator[Iterator[DataPoint[_ <: AnyVal]]] = iterator.map(row => process(row, tsdb, interval, conversionStrategy))
 
         override def hasNext: Boolean =
           if (!i.hasNext) {
-            log.trace("iterating done, calling shutdown on the TSDB client instance")
+            log.trace("iterating done, returning the TSDB client instance to the pool")
             TSDBClientManager.pool.returnObject(tsdb)
             false
           } else
@@ -405,15 +491,22 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
-        saltBuckets = saltBuckets
+        saltBuckets = saltBuckets,
+        metricWidth = metricWidth,
+        tagkWidth = tagkWidth,
+        tagvWidth = tagvWidth,
+        preloadUidCache = preloadUidCache,
+        preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
       )
+      log.trace("getting the TSDB client instance from the pool")
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[T]] {
           override def hasNext: Boolean =
             if (!it.hasNext) {
-              log.trace("iterating done, calling shutdown on the TSDB client instance")
+              log.trace("iterating done, returning the TSDB client instance to the pool")
               TSDBClientManager.pool.returnObject(tsdb)
               false
             } else
@@ -448,15 +541,22 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
-        saltBuckets = saltBuckets
+        saltBuckets = saltBuckets,
+        metricWidth = metricWidth,
+        tagkWidth = tagkWidth,
+        tagvWidth = tagvWidth,
+        preloadUidCache = preloadUidCache,
+        preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
       )
+      log.trace("getting the TSDB client instance from the pool")
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         v1 = new Iterator[DataPoint[Double]] {
         override def hasNext: Boolean =
           if (!it.hasNext) {
-            log.trace("iterating done, calling shutdown on the TSDB client instance")
+            log.trace("iterating done, returning the TSDB client instance to the pool")
             TSDBClientManager.pool.returnObject(tsdb)
             false
           } else
@@ -495,15 +595,22 @@ class OpenTSDBContext(@transient val sqlContext: SQLContext, configurator: OpenT
               baseConf = hbaseConfiguration,
               tsdbTable = tsdbTable,
               tsdbUidTable = tsdbUidTable,
+              autoCreateMetrics = autoCreateMetrics,
               saltWidth = saltWidth,
-              saltBuckets = saltBuckets
+              saltBuckets = saltBuckets,
+              metricWidth = metricWidth,
+              tagkWidth = tagkWidth,
+              tagvWidth = tagvWidth,
+              preloadUidCache = preloadUidCache,
+              preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
             )
+            log.trace("getting the TSDB client instance from the pool")
             val tsdb = TSDBClientManager.pool.borrowObject()
             writeFunc(
               new Iterator[DataPoint[T]] {
                 override def hasNext: Boolean =
                   if (!it.hasNext) {
-                    log.trace("iterating done, calling shutdown on the TSDB client instance")
+                    log.trace("iterating done, returning the TSDB client instance to the pool")
                     TSDBClientManager.pool.returnObject(tsdb)
                     false
                   } else

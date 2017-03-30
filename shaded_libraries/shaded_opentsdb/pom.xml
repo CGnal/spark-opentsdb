@@ -6,7 +6,7 @@
 
     <properties>
         <asynchbase-version>1.7.1</asynchbase-version>
-        <opentsdb-version>2.2.0</opentsdb-version>
+        <opentsdb-version>2.3.0</opentsdb-version>
     </properties>
 
     <modelVersion>4.0.0</modelVersion>
@@ -78,7 +78,7 @@
                     <groupId>org.slf4j</groupId>
                     <artifactId>log4j-over-slf4j</artifactId>
                 </exclusion>
-			</exclusions>
+            </exclusions>
         </dependency>
     </dependencies>
 
@@ -102,18 +102,30 @@
                                     <pattern>org.hbase.async</pattern>
                                     <shadedPattern>shaded.org.hbase.async</shadedPattern>
                                 </relocation>
-								<relocation>
-									<pattern>com.google.common</pattern>
-									<shadedPattern>shaded.com.google.common</shadedPattern>
-								</relocation>
-								<relocation>
-									<pattern>org.apache.commons.math3</pattern>
-									<shadedPattern>shaded.org.apache.commons.math3</shadedPattern>
-								</relocation>
-								<relocation>
-									<pattern>com.google.protobuf</pattern>
-									<shadedPattern>shaded.com.google.protobuf</shadedPattern>
-								</relocation>
+                                <relocation>
+                                    <pattern>com.google.common</pattern>
+                                    <shadedPattern>shaded.com.google.common</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.apache.commons.math3</pattern>
+                                    <shadedPattern>shaded.org.apache.commons.math3</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.google.protobuf</pattern>
+                                    <shadedPattern>shaded.com.google.protobuf</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.fasterxml</pattern>
+                                    <shadedPattern>shaded.com.fasterxml</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.jboss.netty</pattern>
+                                    <shadedPattern>shaded.org.jboss.netty</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.apache.commons.logging</pattern>
+                                    <shadedPattern>shaded.org.apache.commons.logging</shadedPattern>
+                                </relocation>
                             </relocations>
                         </configuration>
                     </execution>
