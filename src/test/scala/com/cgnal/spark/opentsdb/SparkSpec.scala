@@ -28,6 +28,7 @@ import org.apache.spark.sql.types._
 import scala.collection.convert.decorateAsJava._
 import scala.collection.mutable
 
+@SuppressWarnings(Array("org.wartremover.warts.Equals", "org.wartremover.warts.Nothing", "org.wartremover.warts.NonUnitStatements"))
 class SparkSpec extends SparkBaseSpec {
 
   "Spark" must {

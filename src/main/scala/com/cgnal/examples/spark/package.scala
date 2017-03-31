@@ -21,6 +21,7 @@ import java.net.{ URL, URLClassLoader }
 
 package object spark {
   //Simple function for adding a directory to the system classpath
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   def addPath(dir: String): Unit = {
     val method = classOf[URLClassLoader].getDeclaredMethod("addURL", classOf[URL])
     method.setAccessible(true)

@@ -33,6 +33,7 @@ import org.apache.spark.sql._
  * `DefaultSource` when the user specifies the path of a source during DDL
  * operations through [[org.apache.spark.sql.DataFrameReader.format]].
  */
+@SuppressWarnings(Array("org.wartremover.warts.Overloading"))
 class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
   /**
@@ -94,6 +95,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
    * @param data       Dataframe to save into OpenTSDB
    * @return returns populated base relation
    */
+  @SuppressWarnings(Array("org.wartremover.warts.AsInstanceOf", "org.wartremover.warts.Throw"))
   override def createRelation(sqlContext: SQLContext, mode: SaveMode, parameters: Map[String, String], data: DataFrame): BaseRelation = {
     val openTSDBRelation = createRelation(sqlContext, parameters)
     mode match {
@@ -122,7 +124,7 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
    *
    * @return schema generated
    */
-  override def schema = StructType(
+  override def schema: StructType = StructType(
     Array(
       StructField("timestamp", TimestampType, nullable = false),
       StructField("metric", StringType, nullable = false),
@@ -137,6 +139,7 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
    * @param data [[DataFrame]] to be inserted into OpenTSDB
    * @param overwrite must be false; otherwise, throws [[UnsupportedOperationException]]
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   override def insert(data: DataFrame, overwrite: Boolean): Unit = {
     if (overwrite) {
       throw new UnsupportedOperationException("overwrite is not yet supported")
@@ -149,6 +152,7 @@ class OpenTSDBRelation(val sqlContext: SQLContext, openTSDBContext: OpenTSDBCont
    *
    * @return RDD will all the results from OpenTSDB
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   override def buildScan(): RDD[Row] =
     openTSDBContext.load(
       metric.getOrElse(throw new IllegalArgumentException(s"metric name must be specified")).trim,
@@ -173,7 +177,7 @@ trait OpenTSDBConfigurator { this: Serializable =>
 
 }
 
-@SuppressWarnings(Array("org.wartremover.warts.Var"))
+@SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.DefaultArguments", "org.wartremover.warts.Null"))
 object DefaultSourceConfigurator extends OpenTSDBConfigurator with Serializable {
 
   @transient private var _configuration: Option[Configuration] = None

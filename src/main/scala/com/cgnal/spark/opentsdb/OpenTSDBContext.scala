@@ -57,12 +57,12 @@ object OpenTSDBContext {
   /**
    * The HBase table containing the metrics
    */
-  var tsdbTable = "tsdb"
+  var tsdbTable: String = "tsdb"
 
   /**
    * The HBase table containing the various IDs for tags and metric names
    */
-  var tsdbUidTable = "tsdb-uid"
+  var tsdbUidTable: String = "tsdb-uid"
 
   /**
    * The auto create metrics flag
@@ -111,6 +111,7 @@ object OpenTSDBContext {
  * @param sparkSession The sparkSession needed for creating the dataframes, the spark context it's obtained from this sql context
  * @param configurator The Configurator instance that will be used to create the configuration
  */
+@SuppressWarnings(Array("org.wartremover.warts.DefaultArguments", "org.wartremover.warts.Equals", "org.wartremover.warts.ImplicitParameter", "org.wartremover.warts.Overloading"))
 class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: OpenTSDBConfigurator = DefaultSourceConfigurator) extends Serializable {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
@@ -159,6 +160,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
   /**
    * @return the keytab path for accessing the secure HBase
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   def keytab: Broadcast[Array[Byte]] = keytabData_.getOrElse(throw new Exception("keytab has not been defined"))
 
   /**
@@ -173,6 +175,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
   /**
    * @return
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   def keytabLocalTempDir: String = keytabLocalTempDir_.getOrElse(throw new Exception("keytabLocalTempDir has not been defined"))
 
   def keytabLocalTempDir_=(dir: String): Unit = keytabLocalTempDir_ = Some(dir)
@@ -180,6 +183,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
   /**
    * @return the Kerberos principal
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   def principal: String = principal_.getOrElse(throw new Exception("principal has not been defined"))
 
   /**
@@ -265,6 +269,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
             firstTime
           }
 
+        @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
         override def next(): Int = {
           if (index == 0) {
             metrics.foreach(metric => {
@@ -307,6 +312,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
    *                           otherwise, if `ConvertToDouble` the value will be converted to Double
    * @return the `RDD`
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Nothing", "org.wartremover.warts.Throw"))
   def load(
     metricName: String,
     tags: Map[String, String] = Map.empty[String, String],
@@ -407,6 +413,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
     rdd.flatMap(identity[Iterator[DataPoint[_ <: AnyVal]]])
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements", "org.wartremover.warts.Nothing", "org.wartremover.warts.StringPlusAny", "org.wartremover.warts.Throw"))
   private def process(row: (ImmutableBytesWritable, Result), tsdb: TSDB, interval: Option[(Long, Long)], conversionStrategy: ConversionStrategy): Iterator[DataPoint[_ <: AnyVal]] = {
     log.trace("processing row")
     val key = row._1.get()

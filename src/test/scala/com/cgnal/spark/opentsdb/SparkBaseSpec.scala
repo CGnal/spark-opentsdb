@@ -28,10 +28,10 @@ import shaded.org.hbase.async.HBaseClient
 
 import scala.collection.convert.decorateAsScala._
 
-@SuppressWarnings(Array("org.wartremover.warts.Var"))
+@SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.NonUnitStatements", "org.wartremover.warts.Null"))
 trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
-  val hbaseUtil = new HBaseTestingUtility()
+  private val hbaseUtil = new HBaseTestingUtility()
 
   var streamingContext: StreamingContext = _
 
@@ -100,7 +100,7 @@ trait SparkBaseSpec extends WordSpec with MustMatchers with BeforeAndAfterAll {
 
 class TestOpenTSDBConfigurator(mapConf: Map[String, String]) extends OpenTSDBConfigurator with Serializable {
 
-  lazy val configuration = mapConf.foldLeft(new Configuration(false)) { (conf, pair) =>
+  lazy val configuration: Configuration = mapConf.foldLeft(new Configuration(false)) { (conf, pair) =>
     conf.set(pair._1, pair._2)
     conf
   }

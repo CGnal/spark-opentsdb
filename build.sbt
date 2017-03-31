@@ -46,39 +46,7 @@ scalacOptions in(Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc links
 )
 
-wartremoverErrors ++= Seq(
-  Wart.Any,
-  Wart.Any2StringAdd,
-  //Wart.AsInstanceOf,
-  //Wart.DefaultArguments,
-  Wart.EitherProjectionPartial,
-  Wart.Enumeration,
-  //Wart.Equals,
-  Wart.ExplicitImplicitTypes,
-  Wart.FinalCaseClass,
-  Wart.FinalVal,
-  Wart.ImplicitConversion,
-  Wart.IsInstanceOf,
-  Wart.JavaConversions,
-  Wart.LeakingSealed,
-  Wart.ListOps,
-  Wart.MutableDataStructures,
-  //Wart.NoNeedForMonad,
-  //Wart.NonUnitStatements,
-  //Wart.Nothing,
-  //Wart.Null,
-  Wart.Option2Iterable,
-  Wart.OptionPartial,
-  //Wart.Overloading,
-  Wart.Product,
-  Wart.Return,
-  Wart.Serializable,
-  //Wart.Throw,
-  Wart.ToString,
-  Wart.TryPartial,
-  Wart.Var,
-  Wart.While
-)
+wartremoverErrors ++= Warts.all
 
 val sparkVersion = "2.0.0.cloudera1"
 
@@ -170,7 +138,7 @@ libraryDependencies ++= Seq(
 //We set all provided dependencies to none, so that they are included in the classpath of root module
 lazy val mainRunner = project.in(file("mainRunner")).dependsOn(RootProject(file("."))).settings(
   // we set all provided dependencies to none, so that they are included in the classpath of mainRunner
-  libraryDependencies := (libraryDependencies in RootProject(file("."))).value.map{
+  libraryDependencies := (libraryDependencies in RootProject(file("."))).value.map {
     module =>
       if (module.configurations.equals(Some("provided"))) {
         module.copy(configurations = None)
@@ -182,7 +150,7 @@ lazy val mainRunner = project.in(file("mainRunner")).dependsOn(RootProject(file(
 isSnapshot := true
 
 //http://stackoverflow.com/questions/18838944/how-to-add-provided-dependencies-back-to-run-test-tasks-classpath/21803413#21803413
-run in Compile <<= Defaults.runTask(fullClasspath in Compile, mainClass in(Compile, run), runner in(Compile, run))
+run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in(Compile, run), runner in(Compile, run))
 
 //http://stackoverflow.com/questions/27824281/sparksql-missingrequirementerror-when-registering-table
 fork := true

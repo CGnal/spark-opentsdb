@@ -45,7 +45,7 @@ package object opentsdb {
 
   @transient private lazy val log = Logger.getLogger(getClass.getName)
 
-  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.NonUnitStatements", "org.wartremover.warts.StringPlusAny", "org.wartremover.warts.Throw"))
   private def doThrottle(d: Deferred[AnyRef]) = {
     log.info("Throttling...")
     var throttle_time = System.nanoTime()
@@ -68,7 +68,7 @@ package object opentsdb {
     log.info("Done throttling...")
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var", "org.wartremover.warts.NonUnitStatements"))
   @inline private def addLongDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     var datapoints = mutable.Map.empty[String, WritableDataPoints]
     @volatile var throttle = false
@@ -99,7 +99,7 @@ package object opentsdb {
     })
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var", "org.wartremover.warts.NonUnitStatements"))
   @inline private def addFloatDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     @volatile var throttle = false
     val cb = new Callback[Unit, AnyRef] {
@@ -129,7 +129,7 @@ package object opentsdb {
     })
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var"))
+  @SuppressWarnings(Array("org.wartremover.warts.MutableDataStructures", "org.wartremover.warts.Var", "org.wartremover.warts.NonUnitStatements"))
   @inline private def addDoubleDataPoints[T <: AnyVal](it: Iterator[DataPoint[T]], tsdb: TSDB) = {
     @volatile var throttle = false
     val cb = new Callback[Unit, AnyRef] {
@@ -183,6 +183,7 @@ package object opentsdb {
     addDoubleDataPoints(it, tsdb)
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   private[opentsdb] def getUIDScan(metricName: String, tags: Map[String, String]) = {
     val scan = new Scan()
     val name: String = String.format("^(%s)$", Array(metricName, tags.keys.mkString("|"), tags.values.mkString("|")).mkString("|"))
@@ -192,6 +193,7 @@ package object opentsdb {
     scan
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   private[opentsdb] def getMetricScan(
     bucket: Byte,
     tags: Map[String, String],
@@ -260,7 +262,7 @@ package object opentsdb {
     sep + bytes.map("%02x".format(_)).mkString(sep)
   }
 
-  @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While"))
+  @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While", "org.wartremover.warts.NonUnitStatements"))
   private def hexStringToByteArray(s: String): Array[Byte] = {
     val sn = s.replace("\\x", "")
     val b: Array[Byte] = new Array[Byte](sn.length / 2)
@@ -287,6 +289,7 @@ package object opentsdb {
     def opentsdb(): Unit = writer.format("com.cgnal.spark.opentsdb").save
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.ImplicitParameter"))
   implicit class rddWrapper(rdd: RDD[DataPoint[Double]]) {
 
     def toDF(implicit sparkSession: SparkSession): DataFrame = {
@@ -312,6 +315,7 @@ package object opentsdb {
     )
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Null", "org.wartremover.warts.Overloading"))
   implicit class EnrichedSparkSession(sparkSession: SparkSession) {
 
     def loadTable(tableName: TableName, scan: Scan): RDD[(ImmutableBytesWritable, Result)] = {

@@ -31,12 +31,14 @@ import shaded.org.hbase.async.HBaseClient
 
 import scala.collection.convert.decorateAsJava._
 
+@SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
 class TSDBClientFactory extends BasePooledObjectFactory[TSDB] {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
   override def wrap(tsdb: TSDB): PooledObject[TSDB] = new DefaultPooledObject[TSDB](tsdb)
 
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   override def create(): TSDB = synchronized {
     log.info("About to create the TSDB client instance")
     val hbaseClient = new HBaseClient(TSDBClientManager.asyncConfig_.getOrElse(throw new Exception("no configuration available")))
@@ -69,7 +71,7 @@ object TSDBClientManager {
 
   @transient lazy private val log = Logger.getLogger(getClass.getName)
 
-  @transient val pool = new GenericObjectPool[TSDB](new TSDBClientFactory())
+  @transient val pool: GenericObjectPool[TSDB] = new GenericObjectPool[TSDB](new TSDBClientFactory())
 
   @inline private def writeStringToFile(file: File, str: String): Unit = {
     val bw = new BufferedWriter(new FileWriter(file))
@@ -99,6 +101,7 @@ object TSDBClientManager {
    * @param preloadUidCache           true if the uids should be cached
    * @param preloadUidCacheMaxEntries the maximun number of cache entries
    */
+  @SuppressWarnings(Array("org.wartremover.warts.Equals", "org.wartremover.warts.NonUnitStatements", "org.wartremover.warts.Throw"))
   def init(
     keytabLocalTempDir: Option[String],
     keytabData: Option[Broadcast[Array[Byte]]],

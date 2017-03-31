@@ -37,6 +37,7 @@ import scala.util.Random
   --class com.cgnal.examples.spark.Main spark-opentsdb-assembly-2.0.jar xxxx dgreco.keytab dgreco@DGRECO-MBP.LOCAL
  */
 
+@SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements", "org.wartremover.warts.PublicInference"))
 object Main extends App {
 
   val yarn = false
