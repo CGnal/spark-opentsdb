@@ -65,6 +65,16 @@ object OpenTSDBContext {
   var tsdbUidTable: String = "tsdb-uid"
 
   /**
+   * The HBase table containing the various meta information for metrics
+   */
+  var tsdbMetaTable: String = "tsdb-meta"
+
+  /**
+   * The HBase table containing the various tree information for metrics
+   */
+  var tsdbTreeTable: String = "tsdb-tree"
+
+  /**
    * The auto create metrics flag
    */
   var autoCreateMetrics: Boolean = true
@@ -123,6 +133,12 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var tsdbUidTable = OpenTSDBContext.tsdbUidTable
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var tsdbMetaTable = OpenTSDBContext.tsdbMetaTable
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var"))
+  private[opentsdb] var tsdbTreeTable = OpenTSDBContext.tsdbTreeTable
 
   @SuppressWarnings(Array("org.wartremover.warts.Var"))
   private[opentsdb] var autoCreateMetrics = OpenTSDBContext.autoCreateMetrics
@@ -243,6 +259,8 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        tsdbMetaTable = tsdbMetaTable,
+        tsdbTreeTable = tsdbTreeTable,
         autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets,
@@ -382,6 +400,8 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        tsdbMetaTable = tsdbMetaTable,
+        tsdbTreeTable = tsdbTreeTable,
         autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets,
@@ -498,6 +518,8 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        tsdbMetaTable = tsdbMetaTable,
+        tsdbTreeTable = tsdbTreeTable,
         autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets,
@@ -508,6 +530,7 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         preloadUidCacheMaxEntries = preloadUidCacheMaxEntries
       )
       log.trace("getting the TSDB client instance from the pool")
+
       val tsdb = TSDBClientManager.pool.borrowObject()
       writeFunc(
         new Iterator[DataPoint[T]] {
@@ -548,6 +571,8 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
         baseConf = hbaseConfiguration,
         tsdbTable = tsdbTable,
         tsdbUidTable = tsdbUidTable,
+        tsdbMetaTable = tsdbMetaTable,
+        tsdbTreeTable = tsdbTreeTable,
         autoCreateMetrics = autoCreateMetrics,
         saltWidth = saltWidth,
         saltBuckets = saltBuckets,
@@ -602,6 +627,8 @@ class OpenTSDBContext(@transient val sparkSession: SparkSession, configurator: O
               baseConf = hbaseConfiguration,
               tsdbTable = tsdbTable,
               tsdbUidTable = tsdbUidTable,
+              tsdbMetaTable = tsdbMetaTable,
+              tsdbTreeTable = tsdbTreeTable,
               autoCreateMetrics = autoCreateMetrics,
               saltWidth = saltWidth,
               saltBuckets = saltBuckets,

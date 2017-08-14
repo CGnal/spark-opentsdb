@@ -48,7 +48,7 @@ scalacOptions in(Compile, doc) ++= Seq(
 
 wartremoverErrors ++= Warts.all
 
-val sparkVersion = "2.0.0.cloudera1"
+val sparkVersion = "2.2.0.cloudera1"
 
 val hadoopVersion = "2.6.0-cdh5.9.0"
 
