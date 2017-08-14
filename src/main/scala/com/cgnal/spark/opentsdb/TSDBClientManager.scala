@@ -109,6 +109,8 @@ object TSDBClientManager {
     baseConf: Configuration,
     tsdbTable: String,
     tsdbUidTable: String,
+    tsdbMetaTable: String,
+    tsdbTreeTable: String,
     autoCreateMetrics: Boolean,
     saltWidth: Int,
     saltBuckets: Int,
@@ -128,16 +130,19 @@ object TSDBClientManager {
       val config = new Config(false)
       config.overrideConfig("tsd.storage.hbase.data_table", tsdbTable)
       config.overrideConfig("tsd.storage.hbase.uid_table", tsdbUidTable)
+      config.overrideConfig("tsd.storage.hbase.meta_table", tsdbMetaTable)
+      config.overrideConfig("tsd.storage.hbase.tree_table", tsdbTreeTable)
       config.overrideConfig("tsd.core.auto_create_metrics", autoCreateMetrics.toString)
       config.overrideConfig("tsd.storage.uid.width.metric", metricWidth.toString)
       config.overrideConfig("tsd.storage.uid.width.tagk", tagkWidth.toString)
-      config.overrideConfig("tsd.storage.uid.width.tagk", tagvWidth.toString)
+      config.overrideConfig("tsd.storage.uid.width.tagv", tagvWidth.toString)
       config.overrideConfig("tsd.core.preload_uid_cache", preloadUidCache.toString)
       config.overrideConfig("tsd.core.preload_uid_cache.max_entries", preloadUidCacheMaxEntries.toString)
       if (saltWidth > 0) {
         config.overrideConfig("tsd.storage.salt.width", saltWidth.toString)
         config.overrideConfig("tsd.storage.salt.buckets", saltBuckets.toString)
       }
+
       config.disableCompactions()
       asyncConfig.overrideConfig("hbase.zookeeper.quorum", quorum.split(",").toList.map(tk => s"$tk:$port").mkString(","))
       asyncConfig.overrideConfig("hbase.zookeeper.znode.parent", "/hbase")
